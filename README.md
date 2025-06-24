@@ -7,7 +7,7 @@ This repository contains analytics files and code used in the generation of the 
 **Please cite:**
 ---
 
-Code Current Release : v0.1.0-alpha [![DOI](https://zenodo.org/badge/1007445443.svg)](https://doi.org/10.5281/zenodo.15725787)
+Code: Current Release: v0.1.0-alpha [![DOI](https://zenodo.org/badge/1007445443.svg)](https://doi.org/10.5281/zenodo.15725787)
 
 DOI: https://doi.org/10.5281/zenodo.15725787
 
