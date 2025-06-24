@@ -1,0 +1,744 @@
+---
+title: "Manuscript - Inhibition of NFAT promotes loss of tissue resident uterine natural killer cells and attendant pregnancy complications in humans"
+subtitle: "Sample Integration and Analysis"
+author: "RA"
+output:
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    downcute_theme: "chaos"
+editor_options: 
+  chunk_output_type: console
+---
+
+## Loading Required Libraries
+```{r}
+suppressPackageStartupMessages({
+library(devtools)
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(SeuratWrappers)
+library(dplyr)
+library(ape)
+library(Rfast2)
+library(RColorBrewer)
+library(viridis)
+library(data.table)
+library(tidyverse)
+library(magrittr)
+library(gridExtra)
+library(cowplot)
+library(Matrix)
+library(reticulate)
+library(WebGestaltR)
+library(harmony)
+library(MAST)
+library(purrr)
+library(usefun)
+library(formattable)
+library(splitstackshape)
+library(formatR)
+library(venn)
+library(VennDiagram)
+library(Hmisc)
+library(interp)
+library(SoupX)
+library(knitr)
+library(pheatmap)
+})
+```
+
+### Data Preparation per Sample
+
+## HC Datasets 
+```{r}
+#---------Early Secretory---------
+#Loading HC01
+HC01 <- readRDS("HC01_SeuratObject_soupX_doublet_QC_filtered.rds") 
+dim(HC01) 
+head(colnames(HC01))
+DefaultAssay(HC01) #Should be RNA (otherwise would have been SCT if normalized)
+HC01 <- RenameCells(object = HC01, add.cell.id = "Early_Secretory_HC01")
+head(colnames(HC01))
+HC01@meta.data$Phase <- "Early_Secretory"
+unique(HC01@meta.data$Phase)
+unique(HC01@meta.data$Sequencing)
+HC01@meta.data$Cross_Lib <- "NO" #Accounting for cross-lib runs as well
+unique(HC01@meta.data$Cross_Lib)
+
+
+#Loading HC18
+HC18_CD45 <- readRDS("HC18_CD45_SeuratObject_soupX_doublet_QC_filtered.rds")
+dim(HC18_CD45) 
+DefaultAssay(HC18_CD45) 
+head(colnames(HC18_CD45))
+HC18_CD45 <- RenameCells(object = HC18_CD45, add.cell.id = "Early_Secretory_HC18_CD45")
+head(colnames(HC18_CD45))
+unique(HC18_CD45@meta.data$Sequencing)
+HC18_CD45@meta.data$Phase <- "Early_Secretory"
+unique(HC18_CD45@meta.data$Phase)
+HC18_CD45@meta.data$Cross_Lib <- "NO"
+unique(HC18_CD45@meta.data$Cross_Lib)
+
+
+#---------Mid Secretory---------
+#Loading HC10
+HC10 <- readRDS("HC10_SeuratObject_soupX_doublet_QC_filtered.rds") 
+HC10@assays 
+DefaultAssay(HC10) <- "RNA" 
+DefaultAssay(HC10)
+dim(HC10) 
+unique(HC10@meta.data$orig.ident)
+head(colnames(HC10))
+HC10 <- RenameCells(object = HC10, add.cell.id = "Mid_Secretory_HC10")
+head(colnames(HC10))
+HC10@meta.data$Sequencing <- "3'"
+unique(HC10@meta.data$Sequencing)
+HC10@meta.data$Phase <- "Mid_Secretory"
+unique(HC10@meta.data$Phase)
+HC10@meta.data$Cross_Lib <- "NO"
+unique(HC10@meta.data$Cross_Lib)
+
+#Loading HC12
+HC12 <- readRDS("HC12_SeuratObject_soupX_doublet_QC_filtered.rds")
+HC12@assays 
+DefaultAssay(HC12) <- "RNA"
+DefaultAssay(HC12)
+dim(HC12) 
+unique(HC12@meta.data$orig.ident)
+head(colnames(HC12))
+HC12 <- RenameCells(object = HC12, add.cell.id = "Mid_Secretory_HC12")
+head(colnames(HC12))
+HC12@meta.data$Sequencing <- "3'"
+unique(HC12@meta.data$Sequencing)
+HC12@meta.data$Phase <- "Mid_Secretory"
+unique(HC12@meta.data$Phase)
+HC12@meta.data$Cross_Lib <- "NO"
+unique(HC12@meta.data$Cross_Lib)
+
+#Late Secretory
+#Loading HC19
+HC19 <- readRDS("HC19_SeuratObject_soupX_doublet_QC_filtered.rds") 
+HC19@assays 
+DefaultAssay(HC19) <- "RNA" 
+DefaultAssay(HC19)
+dim(HC19) 
+unique(HC19@meta.data$orig.ident)
+head(colnames(HC19))
+HC19 <- RenameCells(object = HC19, add.cell.id = "Late_Secretory_HC19")
+head(colnames(HC19))
+HC19@meta.data$Sequencing <- "3'"
+unique(HC19@meta.data$Sequencing)
+HC19@meta.data$Phase <- "Late_Secretory"
+unique(HC19@meta.data$Phase)
+HC19@meta.data$Cross_Lib <- "NO"
+unique(HC19@meta.data$Cross_Lib)
+
+#Loading HC20
+HC20 <- readRDS("HC20_SeuratObject_soupX_doublet_QC_filtered.rds")
+HC20@assays 
+DefaultAssay(HC20) <- "RNA"
+DefaultAssay(HC20)
+dim(HC20) 
+unique(HC20@meta.data$orig.ident)
+HC20@meta.data$orig.ident <- "HC20"
+head(colnames(HC20))
+HC20 <- RenameCells(object = HC20, add.cell.id = "Late_Secretory_HC20")
+head(colnames(HC20))
+HC20@meta.data$Sequencing <- "3'"
+unique(HC20@meta.data$Sequencing)
+HC20@meta.data$Phase <- "Late_Secretory"
+unique(HC20@meta.data$Phase)
+HC20@meta.data$Cross_Lib <- "NO"
+unique(HC20@meta.data$Cross_Lib)
+```
+
+```{r, eval=FALSE}
+#Sanity check that all default assays are RNA for loaded HC biopsies
+DefaultAssay(HC01) #"RNA"
+DefaultAssay(HC18_CD45) #"RNA"
+DefaultAssay(HC10) #"RNA"
+DefaultAssay(HC12) #"RNA"
+DefaultAssay(HC19) #"RNA"
+DefaultAssay(HC20) #"RNA"
+
+#Check that all IDs are tagged by phase
+head(colnames(HC01)) #"Early_Secretory_HC01_AAACCTGAGCTGTCTA-1" "Early_Secretory_HC01_AAACCTGAGGTGATTA-1"
+head(colnames(HC18_CD45)) #"Early_Secretory_HC18_AAACCCAAGCCAACCC-1" "Early_Secretory_HC18_AAACCCAAGCGGATCA-1"
+head(colnames(HC10)) #"Mid_Secretory_HC10_AAACCCACACTGGATT-1" "Mid_Secretory_HC10_AAACCCACAGTCTACA-1"
+head(colnames(HC12)) #"Mid_Secretory_HC12_AAACCCATCATGTCAG-1" "Mid_Secretory_HC12_AAACGAAAGTCGGGAT-1" 
+head(colnames(HC19)) #"Late_Secretory_HC19_AAACCCAAGAATTGCA-1" "Late_Secretory_HC19_AAACCCAAGACTGAGC-1" 
+head(colnames(HC20)) #"Late_Secretory_HC20_AAACCCACAAGTCCAT-1" "Late_Secretory_HC20_AAACCCAGTCTGTCCT-1"
+```
+
+## UTx Datasets 
+```{r}
+# - UTx01_Bx03 - 3' LH+6 (has both CITESeq and GEX cellranger runs) Mid Secretory
+UTx01_Bx03 <- readRDS("UTx01_Bx03_SeuratObject_soupX_doublet_QC_filtered.rds")
+dim(UTx01_Bx03) 
+head(colnames(UTx01_Bx03))
+Assays(UTx01_Bx03) 
+DefaultAssay(UTx01_Bx03) <- "RNA"
+DefaultAssay(UTx01_Bx03) 
+UTx01_Bx03 <- RenameCells(object = UTx01_Bx03, add.cell.id = "Mid_Secretory_UTx01_Bx03")
+head(colnames(UTx01_Bx03))
+UTx01_Bx03@meta.data$Phase <- "Mid_Secretory"
+unique(UTx01_Bx03@meta.data$Phase)
+UTx01_Bx03@meta.data$Sequencing <- "3'"
+unique(UTx01_Bx03@meta.data$Sequencing)
+UTx01_Bx03@meta.data$Cross_Lib <- "NO"
+unique(UTx01_Bx03@meta.data$Cross_Lib)
+
+# - UTx01_Bx04 - 3' LH+4 Mid Secretory
+UTx01_Bx04 <- readRDS("UTx01_Bx04_SeuratObject_soupX_doublet_QC_filtered.rds") 
+dim(UTx01_Bx04) 
+head(colnames(UTx01_Bx04))
+DefaultAssay(UTx01_Bx04) 
+UTx01_Bx04 <- RenameCells(object = UTx01_Bx04, add.cell.id = "Mid_Secretory_UTx01_Bx04")
+head(colnames(UTx01_Bx04))
+UTx01_Bx04@meta.data$Phase <- "Mid_Secretory"
+unique(UTx01_Bx04@meta.data$Phase)
+UTx01_Bx04@meta.data$Sequencing <- "3'"
+unique(UTx01_Bx04@meta.data$Sequencing)
+UTx01_Bx04@meta.data$Cross_Lib <- "NO"
+unique(UTx01_Bx04@meta.data$Cross_Lib)
+
+# - UTx01Bx05	*LH+9/10 3' scRNA Sequencing (3' GEX)  Mid Secretory/Late -10
+UTx01_Bx05 <- readRDS("UTx01_Bx05_SeuratObject_soupX_doublet_QC_filtered.rds")
+dim(UTx01_Bx05)
+head(colnames(UTx01_Bx05))
+DefaultAssay(UTx01_Bx05) 
+UTx01_Bx05 <- RenameCells(object = UTx01_Bx05, add.cell.id = "Mid_Late_Secretory_UTx01_Bx05")
+head(colnames(UTx01_Bx05))
+UTx01_Bx05@meta.data$Phase <- "Mid_Late_Secretory"
+unique(UTx01_Bx05@meta.data$Phase)
+UTx01_Bx05@meta.data$Sequencing <- "3'"
+unique(UTx01_Bx05@meta.data$Sequencing)
+UTx01_Bx05@meta.data$Cross_Lib <- "NO"
+unique(UTx01_Bx05@meta.data$Cross_Lib)
+
+
+# - UTX03_BX02 - ALL_GEX_LIBS run 3' LH+9  Mid Secretory
+UTx03_Bx02 <- readRDS("UTx03_Bx02_SeuratObject_soupX_doublet_QC_filtered.rds") 
+dim(UTx03_Bx02) 
+head(colnames(UTx03_Bx02))
+DefaultAssay(UTx03_Bx02) 
+UTx03_Bx02 <- RenameCells(object = UTx03_Bx02, add.cell.id = "Mid_Secretory_UTx03_Bx02")
+head(colnames(UTx03_Bx02))
+UTx03_Bx02@meta.data$Phase <- "Mid_Secretory"
+unique(UTx03_Bx02@meta.data$Phase)
+UTx03_Bx02@meta.data$Sequencing <- "3'"
+unique(UTx03_Bx02@meta.data$Sequencing)
+UTx03_Bx02@meta.data$Cross_Lib <- "YES"
+unique(UTx03_Bx02@meta.data$Cross_Lib)
+
+UTx03_Bx03 <- readRDS("UTx03_Bx03_SeuratObject_soupX_doublet_QC_filtered.rds") 
+dim(UTx03_Bx03) 
+head(colnames(UTx03_Bx03))
+DefaultAssay(UTx03_Bx03) 
+UTx03_Bx03 <- RenameCells(object = UTx03_Bx03, add.cell.id = "Early_Secretory_UTx03_Bx03")
+head(colnames(UTx03_Bx03))
+UTx03_Bx03@meta.data$Phase <- "Early_Secretory"
+unique(UTx03_Bx03@meta.data$Phase)
+UTx03_Bx03@meta.data$Sequencing <- "3'"
+unique(UTx03_Bx03@meta.data$Sequencing)
+UTx03_Bx03@meta.data$Cross_Lib <- "YES"
+unique(UTx03_Bx03@meta.data$Cross_Lib)
+
+## UTx01_Bx02 LH+1  Early Secretory
+UTx01_Bx02 <- readRDS("UTx01_Bx02_SeuratObject_soupX_doublet_QC_filtered.rds")
+dim(UTx01_Bx02)
+head(colnames(UTx01_Bx02))
+DefaultAssay(UTx01_Bx02) 
+UTx01_Bx02 <- RenameCells(object = UTx01_Bx02, add.cell.id = "Early_Secretory_UTx01_Bx02")
+head(colnames(UTx01_Bx02))
+UTx01_Bx02@meta.data$Phase <- "Early_Secretory"
+unique(UTx01_Bx02@meta.data$Phase)
+UTx01_Bx02@meta.data$Sequencing <- "5'"
+unique(UTx01_Bx02@meta.data$Sequencing)
+UTx01_Bx02@meta.data$Cross_Lib <- "NO"
+unique(UTx01_Bx02@meta.data$Cross_Lib)
+UTx01_Bx02@meta.data$Sample_Group <- "UTx"
+unique(UTx01_Bx02@meta.data$Sample_Group)
+
+## UTx02_Bx02 *LH=7/8
+UTx02_Bx02 <- readRDS("UTx02_Bx02_SeuratObject_soupX_doublet_QC_filtered.rds")
+dim(UTx02_Bx02) 
+head(colnames(UTx02_Bx02))
+DefaultAssay(UTx02_Bx02) 
+UTx02_Bx02 <- RenameCells(object = UTx02_Bx02, add.cell.id = "Mid_Secretory_UTx02_Bx02")
+head(colnames(UTx02_Bx02))
+UTx02_Bx02@meta.data$Phase <- "Mid_Secretory"
+unique(UTx02_Bx02@meta.data$Phase)
+UTx02_Bx02@meta.data$Sequencing <- "3'"
+unique(UTx02_Bx02@meta.data$Sequencing)
+UTx02_Bx02@meta.data$Cross_Lib <- "NO"
+unique(UTx02_Bx02@meta.data$Cross_Lib)
+UTx02_Bx02@meta.data$Sample_Group <- "UTx"
+unique(UTx02_Bx02@meta.data$Sample_Group)
+
+## UTx04_Bx02 
+UTx04_Bx02 <- readRDS("UTx04_Bx02_SeuratObject_soupX_doublet_QC_filtered.rds")
+dim(UTx04_Bx02) 
+head(colnames(UTx04_Bx02))
+DefaultAssay(UTx04_Bx02) 
+UTx04_Bx02 <- RenameCells(object = UTx04_Bx02, add.cell.id = "unknown_phase_UTx04_Bx02")
+head(colnames(UTx04_Bx02))
+UTx04_Bx02@meta.data$Phase <- "unknown_phase"
+unique(UTx04_Bx02@meta.data$Phase)
+UTx04_Bx02@meta.data$Sequencing <- "3'"
+unique(UTx04_Bx02@meta.data$Sequencing)
+UTx04_Bx02@meta.data$Cross_Lib <- "NO"
+unique(UTx04_Bx02@meta.data$Cross_Lib)
+UTx04_Bx02@meta.data$Sample_Group <- "UTx"
+unique(UTx04_Bx02@meta.data$Sample_Group)
+
+## UTx05_Bx03	*LH+9-10 3' scRNA Sequencing (3' GEX)  Mid Secretory/Late -10
+UTx05_Bx03 <- readRDS("UTx05_Bx03_SeuratObject_soupX_doublet_QC_filtered.rds")
+dim(UTx05_Bx03) 
+head(colnames(UTx05_Bx03))
+DefaultAssay(UTx05_Bx03)
+UTx05_Bx03 <- RenameCells(object = UTx05_Bx03, add.cell.id = "Mid_Late_Secretory_UTx05_Bx03")
+head(colnames(UTx05_Bx03))
+UTx05_Bx03@meta.data$Phase <- "Mid_Late_Secretory"
+unique(UTx05_Bx03@meta.data$Phase)
+UTx05_Bx03@meta.data$Sequencing <- "3'"
+unique(UTx05_Bx03@meta.data$Sequencing)
+UTx05_Bx03@meta.data$Cross_Lib <- "NO"
+unique(UTx05_Bx03@meta.data$Cross_Lib)
+UTx05_Bx03@meta.data$Sample_Group <- "UTx"
+```
+
+## Merging All Samples (un normalized)
+Pre-merge to check cell distributions and whether down-sampling is needed before final merge
+```{r}
+ls()
+merged_object_alpha <- merge(HC01, y = c(HC10, HC12, HC18_CD45, HC19, HC20, UTx01_Bx02, UTx01_Bx03, UTx01_Bx04, UTx01_Bx05, UTx02_Bx02, UTx03_Bx02, UTx03_Bx03, UTx04_Bx02, UTx05_Bx03), project = "Merged_Samples", merge.data = TRUE)
+dim(merged_object_alpha) 
+
+unique(merged_object_alpha$orig.ident)
+
+dist_nCells <- as.data.frame(table(merged_object_alpha@meta.data$orig.ident))
+colnames(dist_nCells) <- c("Sample", "nCells")
+write.csv(dist_nCells, file = "dist_nCells.csv")
+
+rm(merged_object_alpha)
+gc()
+```
+
+### Assessing cell distributions per sample
+Checking number of cells per sample to see whether we need to downsample based on this entire set as previously done
+```{r}
+dist_nCells <- read.csv("dist_nCells.csv")
+unique(dist_nCells$Sample)
+
+colourCount = length(unique(dist_nCells$Sample))
+getPalette = colorRampPalette(brewer.pal(11, "RdYlBu"))
+
+ggplot(dist_nCells, aes(reorder(Sample, -nCells), y = nCells, fill = Sample)) +  
+  geom_bar(stat = "identity", alpha=0.8) + theme_cowplot()+
+  geom_text(aes(label = nCells), vjust = 0) + labs(x="", y="nCells") + scale_y_continuous(expand = c(0,0), limits = c(0, 35000)) +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5), legend.position = "none") +scale_fill_manual(values = getPalette(colourCount)) + labs(y= paste0("nCells (N = ", sum(dist_nCells$nCells), ")"))
+
+quantile(dist_nCells$nCells)  
+```
+
+### Downsampling HC19 and UTx03_Bx03 to 11590 
+**maintaining same numbers as before given additional samples are in range**
+```{r}
+dim(HC19)
+HC19 <- HC19[, sample(colnames(HC19), size=11590, replace=F)] 
+dim(HC19)
+
+dim(UTx01_Bx04)
+UTx01_Bx04 <- UTx01_Bx04[, sample(colnames(UTx01_Bx04), size=11590, replace=F)]
+dim(UTx01_Bx04)
+```
+
+### Merging all unnormalized samples/Seurat objects after downsampling
+```{r}
+merged_object <- merge(HC01, y = c(HC10, HC12, HC18_CD45, HC19, HC20, UTx01_Bx02, UTx01_Bx03, UTx01_Bx04, UTx01_Bx05, UTx02_Bx02, UTx03_Bx02, UTx03_Bx03, UTx04_Bx02, UTx05_Bx03), project = "Merged_Samples", merge.data = TRUE)
+dim(merged_object) 
+```
+
+```{r, eval=FALSE}
+saveRDS(merged_object, file="merged_object_HC_UTx_15_way_merger_downsampled.rds") 
+```
+
+```{r}
+rm(list = ls()) #clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+### Checking cell distribution after downsampling
+```{r}
+merged_object <- readRDS("merged_object_HC_UTx_15_way_merger_downsampled.rds")
+dim(merged_object)
+
+unique(merged_object@meta.data$orig.ident)
+
+DefaultAssay(merged_object)
+dist_nCells <- as.data.frame(table(merged_object@meta.data$orig.ident))
+colnames(dist_nCells) <- c("Sample", "nCells")
+
+colourCount = length(unique(dist_nCells$Sample))
+getPalette = colorRampPalette(brewer.pal(11, "RdYlBu"))
+
+ggplot(dist_nCells, aes(reorder(Sample, -nCells), y = nCells, fill = Sample)) +  
+  geom_bar(stat = "identity", alpha=0.8) + theme_cowplot()+
+  geom_text(aes(label = nCells), vjust = 0) + labs(x="", y="nCells") + scale_y_continuous(expand = c(0,0), limits = c(0, 15000)) +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5), legend.position = "none") +scale_fill_manual(values = getPalette(colourCount)) + labs(y= paste0("nCells (N = ", sum(dist_nCells$nCells), ")"))
+dim(merged_object)
+colnames(merged_object@meta.data)
+unique(merged_object@meta.data$Sample_Group)
+
+tbl <- as.data.frame(table(merged_object@meta.data$Sample_Group, merged_object@meta.data$orig.ident))
+(HC <- tbl %>% dplyr::filter(Var1 == "HC" & Freq !=0))
+(UTx <- tbl %>% dplyr::filter(Var1 == "UTx" & Freq !=0))
+```
+
+
+```{r, fig.width=8, fig.height=4}
+#Validate variable pairings introduced
+unique(merged_object@meta.data[c("orig.ident", "Sequencing", "Phase")])
+
+unique(merged_object@meta.data$orig.ident)
+
+#Double checking QC before norm
+VlnPlot(
+  merged_object, features = c("nFeature_RNA"),   
+  pt.size = 0, raster=FALSE, group.by = 'orig.ident') & 
+  theme(axis.title.x = element_blank(),
+        legend.position = "none")
+
+
+VlnPlot(
+  merged_object, features = c("nCount_RNA"),   
+  pt.size = 0, raster=FALSE, group.by = 'orig.ident') & 
+  theme(axis.title.x = element_blank(),
+        legend.position = "none") 
+
+nrow(merged_object@meta.data %>% dplyr::filter(nCount_RNA > 40000))
+
+dim(merged_object)
+merged_object <- subset(merged_object, subset = nCount_RNA < 40000)
+dim(merged_object)
+
+VlnPlot(
+  merged_object, features = c("nCount_RNA"),
+  pt.size = 0, raster=FALSE, group.by = 'orig.ident') &
+  theme(axis.title.x = element_blank(),
+        legend.position = "none") 
+
+VlnPlot(
+  merged_object, features = c("percent.mt"), 
+  pt.size = 0, raster=FALSE, group.by = 'orig.ident') & 
+   theme(axis.title.x = element_blank(),
+        legend.position = "none")
+```
+
+## Data Normalization 
+```{r, eval=FALSE}
+merged_object <- SCTransform(merged_object, vars.to.regress = "percent.mt", verbose = FALSE, return.only.var.genes = FALSE) 
+
+saveRDS(merged_object, file="merged_object_HC_UTx_15_way_merger_downsampled_afterSCT.rds")
+merged_object@assays
+```
+
+```{r}
+rm(list = ls()) #clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+```{r}
+merged_object <- readRDS("merged_object_HC_UTx_15_way_merger_downsampled_afterSCT.rds")
+dim(merged_object)
+merged_object@assays
+unique(merged_object@meta.data$orig.ident)
+DefaultAssay(merged_object)
+merged_object <- RunPCA(merged_object, verbose = FALSE)
+merged_object_alpha <- merged_object
+merged_object <- FindNeighbors(merged_object, dims = 1:30) #Running to visualize data before integration
+merged_object <- FindClusters(merged_object, resolution = 0.8)
+
+head(Idents(merged_object), 5)
+merged_object <- RunUMAP(merged_object, dims = 1:30)
+```
+
+### Data before integration
+```{r, fig.width=12, fig.height=5}
+# Let's look at the merged object before running harmony
+p1 <- DimPlot(object = merged_object, reduction = "pca", pt.size = 0.1, group.by = "orig.ident",raster=FALSE) + ggtitle("Samples - Before Harmony")
+p2 <- VlnPlot(object = merged_object, features = "PC_1", group.by = "orig.ident",  pt.size = 0,raster=FALSE)
+p1+p2
+
+p1 <- DimPlot(object = merged_object, reduction = "pca", pt.size = 0.1, group.by = "Sequencing",raster=FALSE) + ggtitle("Sequencing - Before Harmony")
+p2 <- VlnPlot(object = merged_object, features = "PC_1", group.by = "Sequencing",  pt.size = 0)
+p1+p2
+
+p1 <- DimPlot(object = merged_object, reduction = "pca", pt.size = 0.1, group.by = "Cross_Lib",raster=FALSE) + ggtitle("Cross_Lib - Before Harmony")
+p2 <- VlnPlot(object = merged_object, features = "PC_1", group.by = "Cross_Lib",  pt.size = 0)
+p1+p2
+```
+
+```{r, fig.width=20, fig.height=5}
+p1 <- DimPlot(merged_object, reduction = "umap", group.by = "orig.ident") + ggtitle("Samples - Before Harmony")
+p2 <- DimPlot(merged_object, reduction = "umap", group.by = "Sequencing") + ggtitle("Sequencing - Before Harmony")
+p3 <- DimPlot(merged_object, reduction = "umap", group.by = "Cross_Lib") + ggtitle("Cross_Lib - Before Harmony")
+p1+p2+p3
+```
+There is a clear difference between the datasets in the uncorrected PCs
+
+### Run Harmony
+We run Harmony by passing the Seurat object and specifying which variable(s) to integrate on. RunHarmony() returns a Seurat object, updated with the corrected Harmony coordinates. Let's set plot_convergence to TRUE, so we can make sure that the Harmony objective function gets better with each round.
+
+Harmony integration on samples, sequencing and could account for any cross-lib confounding (we combined GEX only with CITE-Seq GEX libraries)
+
+```{r, warning=FALSE, fig.height=4, fig.width=6}
+#Run harmony - specify variables to integrate on. In this case we are integrating on "orig.ident" which uniquely identifies each sample, chemistry (3' vs 5' and cross_lib)
+merged_object <- merged_object_alpha
+rm(merged_object_alpha)
+harmonized_object <- RunHarmony(merged_object, 
+				group.by.vars = c("orig.ident", "Sequencing", "Cross_Lib"),
+				reduction = "pca", 
+				assay.use = "SCT", 
+				reduction.save = "harmony", plot_convergence = TRUE) 
+
+Assays(harmonized_object)
+```
+
+To directly access the new Harmony embeddings, use the "Embeddings" function
+```{r, fig.height=4, fig.width=5}
+harmony_embeddings <- Embeddings(harmonized_object, 'harmony')
+harmony_embeddings[1:5, 1:5]
+```
+
+### Determine number of principal components
+Note that from this point onward, we should be using pcs corrected by Harmony
+```{r}
+#Determine percent of variation associated with each PC
+pct <- harmonized_object[["harmony"]]@stdev / sum(harmonized_object[["harmony"]]@stdev) * 100
+
+#Calculate cumulative percents for each PC
+cumulative_percentage <- cumsum(pct)
+
+#Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+pcs.perc <- which(cumulative_percentage > 90 & pct < 5)[1]
+pcs.perc
+
+#Determine the difference between variation of PC and subsequent PC
+var.pcs <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = T)[1] + 1
+
+#last point where change of % of variation is more than 0.1%.
+var.pcs
+
+#Minimum of the two calculation
+pcs <- min(pcs.perc, var.pcs)
+pcs
+```
+
+```{r, fig.height=6, fig.width=12}
+#Create a dataframe with values
+plot_df <- data.frame(pct = pct, 
+           cumulative_percentage = cumulative_percentage, 
+           rank = 1:length(pct))
+
+#Elbow plot to visualize 
+  ggplot(plot_df, aes(cumulative_percentage, pct, label = rank, color = rank > pcs)) + 
+  geom_text() + 
+  geom_vline(xintercept = 90, color = "blue", linetype="dashed", size=0.5) + 
+  geom_hline(yintercept = min(pct[pct > 5]), color = "blue", linetype="dashed", size=0.5) +
+  theme_light() + scale_colour_discrete(l = 37)
+```
+
+### Determine number of principal components
+
+```{r}
+# Examine and visualize PCA results 
+DimHeatmap(harmonized_object, dims = 1, cells = 500, balanced = TRUE, reduction = "harmony")
+```
+
+```{r, fig.width=12, fig.height=40}
+DimHeatmap(harmonized_object, dims = 1:50, cells = 500, balanced = TRUE, reduction = "harmony")
+```
+
+Checking whether the Elbow methods agrees with the above number of pcs
+```{r, fig.width=7, fig.height=4}
+ElbowPlot(harmonized_object, reduction = "harmony", ndims = 50)
+```
+
+### Cell clustering
+Many downstream analyses are performed on low dimensional embeddings, not gene expression. To use the corrected Harmony embeddings rather than PCs, **set reduction = 'harmony'**. 
+
+```{r}
+harmonized_object1 <- harmonized_object
+
+harmonized_object <- harmonized_object1
+harmonized_object <- harmonized_object %>% 
+  RunUMAP(reduction = "harmony", dims = 1:50, verbose = F) %>% 
+  FindNeighbors(reduction = "harmony", dims = 1:50) %>% 
+  FindClusters() %>% 
+  identity()
+```
+
+```{r, fig.width=12, fig.height=5}
+# Let's see what the data looks like after running harmony
+p1 <- DimPlot(object = harmonized_object, reduction = "harmony", pt.size = 0.1, group.by = "orig.ident",raster=FALSE) + ggtitle("Samples - After Harmony")
+p2 <- VlnPlot(object = harmonized_object, features = "harmony_1", group.by = "orig.ident",  pt.size = 0) 
+p1+p2
+
+p1 <- DimPlot(object = harmonized_object, reduction = "harmony", pt.size = 0.1, group.by = "Sequencing",raster=FALSE) + ggtitle("Sequencing - After Harmony")
+p2 <- VlnPlot(object = harmonized_object, features = "harmony_1", group.by = "Sequencing",  pt.size = 0)
+p1+p2
+
+p1 <- DimPlot(object = harmonized_object, reduction = "harmony", pt.size = 0.1, group.by = "Cross_Lib",raster=FALSE) + ggtitle("Cross_Lib - After Harmony")
+p2 <- VlnPlot(object = harmonized_object, features = "harmony_1", group.by = "Cross_Lib",  pt.size = 0)
+p1+p2
+```
+
+```{r, fig.width=20, fig.height=5}
+p1 <- DimPlot(harmonized_object, reduction = "umap", group.by = "orig.ident",raster=FALSE) + ggtitle("Samples - After Harmony")
+p2 <- DimPlot(harmonized_object, reduction = "umap", group.by = "Sequencing",raster=FALSE) + ggtitle("Sequencing - After Harmony")
+p3 <- DimPlot(harmonized_object, reduction = "umap", group.by = "Cross_Lib",raster=FALSE) + ggtitle("Cross_Lib - After Harmony")
+p1+p2+p3
+```
+
+```{r, fig.width=8, fig.height=6.5}
+DimPlot(harmonized_object, reduction = "umap", pt.size = 0.0001, raster=FALSE) + ggtitle("")+ 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+
+DimPlot(harmonized_object, reduction = "umap", pt.size = 0.0001, label = TRUE, label.size = 4.5, raster=FALSE) + ggtitle("")+ 
+  theme(plot.title = element_text(size = 10, hjust = 0.5))
+
+DimPlot(harmonized_object, reduction = "umap", pt.size = 0.0001, label = FALSE, label.size = 4.5, raster=FALSE, group.by = "orig.ident") + ggtitle("")+ 
+  theme(plot.title = element_text(size = 10, hjust = 0.5))
+```
+
+```{r, fig.width=20, fig.height=5}
+unique(harmonized_object@meta.data$orig.ident)
+
+set1 <-   subset(harmonized_object, orig.ident == "HC01"  | orig.ident ==     "HC10" | orig.ident ==      "HC12" | orig.ident ==      "HC18_CD45"  | orig.ident ==      "HC19" )  
+
+set2 <-   subset(harmonized_object, orig.ident == "HC20"  | orig.ident ==     "UTx01_Bx02" | orig.ident ==      "UTx01_Bx03" | orig.ident ==      "UTx01_Bx04"  | orig.ident ==      "UTx01_Bx05" )  
+
+set3 <-   subset(harmonized_object, orig.ident == "UTx02_Bx02"  | orig.ident ==     "UTx03_Bx02" | orig.ident ==      "UTx03_Bx03" | orig.ident ==      "UTx04_Bx02"  | orig.ident ==      "UTx05_Bx03" )  
+
+
+
+DimPlot(set1, reduction = "umap", label = FALSE, pt.size = 0.1, split.by = "orig.ident")  + 
+  ggtitle("") + 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+
+DimPlot(set2, reduction = "umap", label = FALSE, pt.size = 0.1, split.by = "orig.ident")  + 
+  ggtitle("") + 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+
+DimPlot(set3, reduction = "umap", label = FALSE, pt.size = 0.1, split.by = "orig.ident")  + 
+  ggtitle("") + 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+```
+
+### Feature Plots of Genes of Interest
+```{r, fig.height=8, fig.width=15}
+genes <- c("ITGA1","ITGAE","CD69", "IL32", "NCAM1", "FCGR3A")
+FeaturePlot(harmonized_object, features = genes, min.cutoff = "q9", ncol=3, pt.size = 0.1, raster=FALSE)
+```
+
+```{r, fig.height=8, fig.width=15}
+genes <- c("NCR1", "KLF2", "CCL5", "SPINK2", "KLRC1", "ITGAX")
+FeaturePlot(harmonized_object, features = genes, min.cutoff = "q9", ncol=3, pt.size = 0.1, raster=FALSE)
+```
+
+```{r, fig.height=8, fig.width=15}
+genes <- c( "S1PR5", "KLF6","XCL1", "XCL2", "GZMH", "CX3CR1")
+FeaturePlot(harmonized_object, features = genes, min.cutoff = "q9", ncol=3, pt.size = 0.1, raster=FALSE)
+```
+
+```{r, fig.height=3, fig.width=10}
+genes <- c( "ZEB2", "RGS1")
+FeaturePlot(harmonized_object, features = genes, min.cutoff = "q9", ncol=2, pt.size = 0.1, raster=FALSE)
+```
+
+```{r, fig.height=8, fig.width=20}
+unique(harmonized_object@meta.data$Phase)
+genes <- c("ITGA1","ITGAE")
+FeaturePlot(harmonized_object, features = genes, min.cutoff = "q9", split.by = "Phase", raster=FALSE)
+
+genes <- c("CD69", "IL32")
+FeaturePlot(harmonized_object, features = genes, min.cutoff = "q9", split.by = "Phase", raster=FALSE)
+
+genes <- c("NCAM1", "FCGR3A")
+FeaturePlot(harmonized_object, features = genes, min.cutoff = "q9", split.by = "Phase", raster=FALSE)
+
+harmonized_object@meta.data$Sample_Group <- harmonized_object@meta.data$orig.ident
+unique(harmonized_object@meta.data$Sample_Group)
+harmonized_object@meta.data$Sample_Group <- substr(harmonized_object@meta.data$Sample_Group, 1, 3)
+unique(harmonized_object@meta.data$Sample_Group)
+```
+
+```{r, fig.height=10, fig.width=8}
+genes <- c("ITGA1","ITGAE","CD69")
+FeaturePlot(harmonized_object, features = genes, min.cutoff = "q9", ncol=3, split.by = "Sample_Group", raster=FALSE)
+
+genes <- c("IL32", "NCAM1", "FCGR3A")
+FeaturePlot(harmonized_object, features = genes, min.cutoff = "q9", ncol=3, split.by = "Sample_Group", raster=FALSE)
+```
+
+```{r, fig.height=5, fig.width=10}
+DimPlot(harmonized_object, reduction = "umap", label = FALSE, pt.size = 0.0001, split.by = "Sample_Group", raster=FALSE)  + 
+  ggtitle("") + 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+```
+
+We can save the integrated, filtered and cleaned object at this point for use in further downstream analyses
+
+```{r}
+saveRDS(harmonized_object, file = "merged_object_HC_UTx_15_way_merger_downsampled_afterSCT_Harmony_clean.rds")
+```
+
+### Cell enumerations
+```{r, fig.height=7, fig.width=15}
+cellsPerClust <- as.data.frame(table(harmonized_object@active.ident))
+colnames(cellsPerClust) <- c("Cluster", "nCells")
+cellsPerClust
+write.csv(cellsPerClust, file="Markers/cluster_cell_enumerations/cellsPerClust.csv")
+sum(cellsPerClust$nCells) 
+
+
+colourCount = length(unique(cellsPerClust$Cluster))
+getPalette = colorRampPalette(brewer.pal(11, "RdYlBu"))
+
+#Plotting cell dist per cluster
+ggplot(cellsPerClust, aes(reorder(Cluster, -nCells), y = nCells, fill = Cluster)) +
+  geom_bar(stat = "identity", alpha=0.8) + theme_cowplot()+
+  geom_text(aes(label = nCells), vjust = 0) + labs(x="Clusters") +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 11000)) +
+  theme(axis.text.x = element_text(angle = 0,hjust = 1,vjust = 0.5), legend.position = "none") + scale_fill_manual(values = getPalette(colourCount)) +
+  labs(y= paste0("Total Number of Cells (n = ", sum(cellsPerClust$nCells), ")"))
+
+#Cell counts per cluster and sample
+cellsPerClustPerSample <- as.data.frame(table(harmonized_object@meta.data$orig.ident, harmonized_object@meta.data$SCT_snn_res.0.8))
+
+colnames(cellsPerClustPerSample) <- c("Sample", "Cluster", "nCells")
+library(tidyr)
+cellsPerClustPerSample <- spread(cellsPerClustPerSample, key = Sample, value = nCells)
+cellsPerClustPerSample
+write.csv(cellsPerClustPerSample, file="Markers/cluster_cell_enumerations/cellsPerClustPerSample.csv")
+```
+
+## Find Markers 
+```{r}
+(clusters <- c(0, seq(1:33)))  
+
+for(i in clusters){
+  cluster.markers <- FindMarkers(harmonized_object, ident.1 = i, min.pct = 0.25, logfc.threshold = 0.25, only.pos = F)
+  cluster.markers <- cluster.markers %>% arrange(desc(avg_log2FC))
+  write.csv(cluster.markers, file=paste0("Markers/All_Cluster", i, "_Markers.csv"))
+}
+```
+
+```{r}
+sessionInfo()
+```

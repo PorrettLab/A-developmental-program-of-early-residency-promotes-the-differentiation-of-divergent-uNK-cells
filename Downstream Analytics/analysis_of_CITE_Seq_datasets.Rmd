@@ -1,0 +1,680 @@
+---
+title: "HBx10 + HBx12 + HBx20 CITE-Seq (RNA + ADT): Weighted Nearest Neighbour (WNN) Analysis"
+subtitle: "WNN workflow for the analysis of multimodal single-cell datasets"
+author: "RA"
+output:
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    downcute_theme: "chaos"
+editor_options: 
+  chunk_output_type: console
+---
+
+## Loading Required Packages
+```{r}
+suppressPackageStartupMessages({
+library(Seurat)
+  library(ggplot2)
+  library(patchwork)
+  library(dplyr)
+  library(hdf5r)
+  library(ape)
+  library(Rfast2)
+  library(RColorBrewer)
+  library(viridis)
+  library(data.table)
+  library(tidyverse)
+  library(magrittr)
+  library(gridExtra)
+  library(cowplot)
+  library(Matrix)
+  library(reticulate)
+  library(WebGestaltR)
+  library(harmony)
+  library(purrr)
+  library(usefun)
+  library(formattable)
+  library(splitstackshape)
+  library(formatR)
+  library(venn)
+  library(VennDiagram)
+  library(Hmisc)
+  library(interp)
+  library(SoupX)
+  library(knitr)
+  library(pheatmap)
+  library(DropletUtils)
+  library(celldex)
+  library(scater)
+  library(SingleCellExperiment)
+  library(AnnotationDbi)
+  library(org.Hs.eg.db)
+  library(EnsDb.Hsapiens.v86)
+  library(SingleR)
+  library(dittoSeq)
+  library(tidyr)
+  library(ggrepel)
+})
+```
+
+### Set working directory
+```{r}
+setwd("/data/project/porrettlab/lab_members/rasiimwe/HBx_10_12_20_Merger/")
+```
+
+1) CITE-seq libraries for HBx10 + HBx12 + HBx20
+
+## Loading datasets of interest
+```{r}
+HBx10 <-  readRDS("/data/project/porrettlab/lab_members/rasiimwe/tRNK_6sample_aggregation/input_datasets/HBx10_SeuratObject_soupX_doublet_QC_filtered.rds")
+HBx10@assays
+HBx10@meta.data$Sample <- "HBx10"
+
+HBx12 <-  readRDS("/data/project/porrettlab/lab_members/rasiimwe/tRNK_6sample_aggregation/input_datasets/HBx12_SeuratObject_soupX_doublet_QC_filtered.rds")
+HBx12@assays
+HBx12@meta.data$Sample <- "HBx12"
+
+HBx20 <-  readRDS("/data/project/porrettlab/lab_members/rasiimwe/tRNK_6sample_aggregation/input_datasets/HBx20_SeuratObject_soupX_doublet_QC_filtered.rds")
+HBx20@assays
+HBx20@meta.data$Sample <- "HBx20"
+```
+
+
+### Merge all unnormalized Seurat objects
+```{r}
+DefaultAssay(HBx10) <- 'RNA'
+DefaultAssay(HBx12) <- 'RNA'
+DefaultAssay(HBx20) <- 'RNA'
+
+merged_object1 <- merge(HBx10, y = c(HBx12, HBx20), add.cell.ids = c("HBx10","HBx12", "HBx20"),  project = "Merged_Samples", merge.data = TRUE)
+dim(merged_object1) #19818 17413
+```
+
+```{r}
+dist_nCells <- as.data.frame(table(merged_object1@meta.data$Sample))
+colnames(dist_nCells) <- c("Sample", "nCells")
+
+unique(dist_nCells$Sample)
+
+colourCount = length(unique(dist_nCells$Sample))
+getPalette = colorRampPalette(brewer.pal(11, "RdYlBu"))
+
+ggplot(dist_nCells, aes(reorder(Sample, -nCells), y = nCells, fill = Sample)) +  
+  geom_bar(stat = "identity", alpha=0.8) + theme_cowplot()+
+  geom_text(aes(label = nCells), vjust = 0) + labs(x="", y="nCells") + scale_y_continuous(expand = c(0,0), limits = c(0, 13000)) +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5), legend.position = "none") +scale_fill_manual(values = getPalette(colourCount)) + labs(y= paste0("nCells (N = ", sum(dist_nCells$nCells), ")"))
+
+quantile(dist_nCells$nCells) 
+```
+
+
+## Downsampling HBx10
+```{r}
+dim(HBx10)
+HBx10 <- HBx10[, sample(colnames(HBx10), size=5000, replace=F)]
+dim(HBx10)
+```
+
+
+```{r}
+merged_object <- merge(HBx10, y = c(HBx12, HBx20), add.cell.ids = c("HBx10","HBx12", "HBx20"),  project = "Merged_Samples", merge.data = TRUE)
+dim(merged_object) 
+
+rm(HBx10, HBx12, HBx20, merged_object1) #clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+
+```{r}
+dist_nCells <- as.data.frame(table(merged_object@meta.data$Sample))
+colnames(dist_nCells) <- c("Sample", "nCells")
+
+unique(dist_nCells$Sample)
+
+colourCount = length(unique(dist_nCells$Sample))
+getPalette = colorRampPalette(brewer.pal(11, "RdYlBu"))
+
+ggplot(dist_nCells, aes(reorder(Sample, -nCells), y = nCells, fill = Sample)) +  
+  geom_bar(stat = "identity", alpha=0.8) + theme_cowplot()+
+  geom_text(aes(label = nCells), vjust = 0) + labs(x="", y="nCells") + scale_y_continuous(expand = c(0,0), limits = c(0, 7000)) +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5), legend.position = "none") +scale_fill_manual(values = getPalette(colourCount)) + labs(y= paste0("nCells (N = ", sum(dist_nCells$nCells), ")"))
+```
+
+```{r}
+#Validate variable pairings introduced
+unique(merged_object@meta.data$Sample)
+
+#Double checking QC before norm
+VlnPlot(
+  merged_object, features = c("nFeature_RNA"),   
+  pt.size = 0, raster=FALSE, group.by = 'Sample') & 
+  theme(axis.title.x = element_blank(),
+        #axis.text.x = element_blank(),
+        #axis.ticks.x = element_blank(), 
+        legend.position = "none")
+
+
+VlnPlot(
+  merged_object, features = c("nCount_RNA"),   
+  pt.size = 0, raster=FALSE, group.by = 'Sample') & 
+  theme(axis.title.x = element_blank(),
+        #axis.text.x = element_blank(),
+        #axis.ticks.x = element_blank(), 
+        legend.position = "none")
+
+
+VlnPlot(
+  merged_object, features = c("percent.mt"), 
+  pt.size = 0, raster=FALSE, group.by = 'Sample') & 
+   theme(axis.title.x = element_blank(),
+        #axis.text.x = element_blank(),
+        #axis.ticks.x = element_blank(), 
+        legend.position = "none")
+```
+
+
+We have also seen alternative methods where datasets are merged and normalized together before taking them through Harmony e.g. the workflow suggested by [these Sanger Institute researchers](https://www.singlecellcourse.org/scrna-seq-dataset-integration.html#harmony-3-10k-merged_object-cells-and-whole-blood-strt-seq). 
+
+A similar workflow is suggested by the broad institute here: https://portals.broadinstitute.org/harmony/SeuratV3.html
+
+In this workflow, we load data that has gone through QC but not normalized - basically the object taken through Harmony should have been run through all preprocessing steps through PCA as these pcs are required for Harmony
+
+## Data Normalization
+After removing unwanted cells from the dataset, the next step is to normalize the data. For gene expression data, we'll use SCTransform and CLR for antibody- derived tags.
+```{r, eval=FALSE}
+# Noramlizing the data using SCTransform, here I am also removing mitochondrial mapping percentage which is a confounding source of variation
+#Note that the single command SCTransform() replaces NormalizeData(), ScaleData(), and FindVariableFeatures().
+#https://satijalab.org/seurat/articles/sctransform_vignette.html
+DefaultAssay(merged_object) <- 'RNA'
+merged_object <- SCTransform(merged_object, vars.to.regress = "percent.mt", verbose = FALSE) %>% RunPCA()
+```
+
+**Single-cell cell surface protein level expression:** 
+single-cell protein data (representing the quantification of antibody - derived tags (ADTs) in CITE-seq or ASAP-seq data) is analysed using a similar workflow to scRNA-seq. Protein expression levels are normalized within a cell using the centered-log ratio (CLR) transform, followed by dimensional reduction with PCA, and subsequently construct a KNN graph. Unless otherwise specified, feature selection is not performed on protein data, and all measured proteins are used during dimensional reduction.
+
+```{r, eval=FALSE}
+DefaultAssay(merged_object) <- 'ADT' #Remember to specify the default assay you will be working with 
+#We will use all ADT features for dimensional reduction
+#We set a dimensional reduction name to avoid overwriting prior rna pca, ADT's will be bames "apca" 
+VariableFeatures(merged_object) <- rownames(merged_object[["ADT"]])
+merged_object <- NormalizeData(merged_object, normalization.method = 'CLR', margin = 2) %>% 
+  ScaleData() %>% RunPCA(reduction.name = 'apca')
+```
+
+## Saving normalised object
+```{r, eval=FALSE}
+saveRDS(merged_object, file = "normalized_object.rds")
+```
+
+```{r}
+merged_object <- readRDS("normalized_object.rds")
+```
+
+### Data after filtering and normalization
+```{r, fig.height=3.5}
+VlnPlot(merged_object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0)
+VlnPlot(merged_object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0, split.by = "Sample")
+```
+
+```{r, fig.height=3, fig.width=12}
+df <- as.data.table(merged_object@meta.data)
+sel <- c("Sample", "nCount_RNA", "nFeature_RNA", "percent.mt")
+df <- df[, sel, with = FALSE]
+df[1:3, ]
+fontsize <- 10
+linesize <- 0.35
+
+gp.ls <- df[, 2:4] %>% imap( ~ {
+
+   # define lable fun
+  give.n <- function(x) {
+    return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
+  }
+
+  # assign colors
+  col.ls <-
+    setNames(
+      c('gray50', 'gray70', 'gray90', "gray" ),
+      c("nCount_RNA", "nFeature_RNA", "percent.mt", "log10GenesPerUMI")
+    )
+
+  ggplot(data = df, aes(x = Sample, y = .x)) +
+    geom_violin(trim = FALSE, fill = col.ls[.y]) +
+    ggtitle(label = .y) + ylab(label = .y) +
+    theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      panel.border = element_blank()
+    ) +
+    theme(
+      axis.text = element_text(size = fontsize),
+      axis.line = element_line(colour = "black", size = linesize),
+      axis.ticks = element_line(size = linesize),
+      axis.title.x = element_blank(),
+      axis.ticks.length = unit(.05, "cm"),
+      plot.title = element_text(size = fontsize + 2, hjust = 0.5),
+      legend.position = 'none'
+    ) +
+    stat_summary(fun = median, geom = "point", col = "black") +  # Add points to plot
+    stat_summary(fun.data = give.n,
+                 geom = "text",
+                 col = "black") + theme_light()
+})
+
+grid.arrange(gp.ls[[1]], gp.ls[[2]], gp.ls[[3]], ncol = 3)
+```
+
+
+## Data before integration
+```{r}
+merged_object_2 <-  merged_object
+merged_object_2 <- FindMultiModalNeighbors(
+  merged_object_2, reduction.list = list("pca", "apca"),
+  dims.list = list(1:30, 1:10), modality.weight.name = "RNA.weight"
+)
+
+DefaultAssay(merged_object_2)
+merged_object_2 <- RunUMAP(merged_object_2, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_", assay = 'SCT')
+merged_object_2 <- FindClusters(merged_object_2, graph.name = "wsnn", algorithm = 3, verbose = FALSE, assay = 'SCT') # resolution = 2,
+```
+
+
+```{r, fig.width=12, fig.height=5}
+# Let's look at the merged object before running harmony
+p1 <- DimPlot(object = merged_object_2, reduction = "pca", pt.size = 0.1, group.by = "Sample") + ggtitle("Samples - Before Harmony")
+p2 <- VlnPlot(object = merged_object_2, features = "PC_1", group.by = "Sample",  pt.size = 0)
+p1+p2
+
+#ADT before harmony
+p1 <- DimPlot(object = merged_object_2, reduction = "apca", pt.size = .1, group.by = "Sample")
+p2 <- VlnPlot(object = merged_object_2, features = "apca_1", group.by = "Sample",  pt.size = .1)
+p1+p2
+```
+
+```{r}
+(p1 <- DimPlot(merged_object_2, reduction = 'wnn.umap', group.by = "Sample", pt.size = 0.01))
+```
+
+### Run Harmony
+We run Harmony by passing the Seurat object and specifying which variable(s) to integrate on. RunHarmony() returns a Seurat object, updated with the corrected Harmony coordinates. Let's set plot_convergence to TRUE, so we can make sure that the Harmony objective function gets better with each round.
+```{r, warning=FALSE, fig.height=4, fig.width=6}
+#Run harmony - specify variables to integrate on. In this case we are integrating on "orig.ident" which uniquely identifies each sample
+DefaultAssay(merged_object) <- "RNA"
+harmonized_object <- RunHarmony(
+  object = merged_object,
+  group.by.vars = 'Sample',
+  reduction = 'pca',
+  assay.use = 'SCT',
+  project.dim = FALSE,
+  reduction.save = "harmony_rna",
+  plot_convergence = TRUE
+)
+
+
+DefaultAssay(harmonized_object) <- "ADT"
+harmonized_object <- RunHarmony(
+  object = harmonized_object,
+  group.by.vars = 'Sample',
+  reduction = 'apca',
+  assay.use = 'ADT',
+  project.dim = FALSE,
+  reduction.save = "harmony_adt",
+  plot_convergence = TRUE
+)
+```
+
+```{r, fig.width=12}
+# harmonized_object@reductions #pca apca harmony_rna harmony_adt
+# harmonized_object@reductions$harmony_rna$
+# harmonized_object@reductions$harmony_adt$
+p1 <- DimPlot(object = harmonized_object, reduction = "harmony_rna", pt.size = .1, group.by = "Sample")
+p2 <- VlnPlot(object = harmonized_object, features = "harmonyrna_1", group.by = "Sample",  pt.size = .1) #harmonyrna_1 1:50
+p1+p2
+
+p1 <- DimPlot(object = harmonized_object, reduction = "harmony_adt", pt.size = .1, group.by = "Sample")
+p2 <- VlnPlot(object = harmonized_object, features = "harmonyadt_1", group.by = "Sample",  pt.size = .1) #harmonyadt_1 1:50
+p1+p2
+```
+
+To directly access the new Harmony embeddings, use the "Embeddings" function
+```{r, fig.height=4, fig.width=5}
+harmony_embeddings <- Embeddings(harmonized_object, 'harmony_rna')
+harmony_embeddings[1:5, 1:5]
+```
+
+## Downstream analysis
+Many downstream analyses are performed on low dimensional embeddings, not gene expression. To use the corrected Harmony embeddings rather than PCs, set reduction = 'harmony'. For example, let's perform the UMAP and Nearest Neighbor analyses using the Harmony embeddings.
+```{r}
+DefaultAssay(harmonized_object) <- "SCT"
+# Examine and visualize PCA results - needed but checking pca results
+DimHeatmap(harmonized_object, dims = 1, cells = 500, balanced = TRUE)
+```
+
+```{r, fig.width=12, fig.height=20}
+DimHeatmap(harmonized_object, dims = 1:21, cells = 500, balanced = TRUE)
+```
+
+```{r}
+ElbowPlot(harmonized_object)#determining dimentionality of dataset
+```
+
+### Determine number of principal components
+Note that from this point onward, we should be using pcs corrected by Harmony
+```{r}
+#Determine percent of variation associated with each PC
+pct <- harmonized_object[["harmony_rna"]]@stdev / sum(harmonized_object[["harmony_rna"]]@stdev) * 100
+
+#Calculate cumulative percents for each PC
+cumulative_percentage <- cumsum(pct)
+
+#Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+pcs.perc <- which(cumulative_percentage > 90 & pct < 5)[1]
+pcs.perc
+
+#Determine the difference between variation of PC and subsequent PC
+var.pcs <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = T)[1] + 1
+
+#last point where change of % of variation is more than 0.1%.
+var.pcs
+
+#Minimum of the two calculation
+pcs <- min(pcs.perc, var.pcs)
+pcs
+```
+
+```{r, fig.height=6, fig.width=12}
+#Create a dataframe with values
+plot_df <- data.frame(pct = pct,
+           cumulative_percentage = cumulative_percentage,
+           rank = 1:length(pct))
+
+#Elbow plot to visualize
+  ggplot(plot_df, aes(cumulative_percentage, pct, label = rank, color = rank > pcs)) +
+  geom_text() +
+  geom_vline(xintercept = 90, color = "blue", linetype="dashed", size=0.5) +
+  geom_hline(yintercept = min(pct[pct > 5]), color = "blue", linetype="dashed", size=0.5) +
+  theme_light() + scale_colour_discrete(l = 40)
+```
+
+Checking whether the Elbow methods agrees with the above number of pcs
+```{r, fig.width=7, fig.height=4}
+ElbowPlot(harmonized_object, reduction = "harmony_rna", ndims = 50)
+```
+
+
+To directly access the new Harmony embeddings, use the "Embeddings" function
+```{r, fig.height=4, fig.width=5}
+harmony_embeddings <- Embeddings(harmonized_object, 'harmony_rna')
+harmony_embeddings[1:5, 1:5]
+```
+
+### Determine number of principal components (ADT)
+Note that from this point onward, we should be using pcs corrected by Harmony
+```{r}
+#Determine percent of variation associated with each PC
+pct <- harmonized_object[["harmony_adt"]]@stdev / sum(harmonized_object[["harmony_adt"]]@stdev) * 100
+
+#Calculate cumulative percents for each PC
+cumulative_percentage <- cumsum(pct)
+
+#Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+pcs.perc <- which(cumulative_percentage > 90 & pct < 5)[1]
+pcs.perc
+
+#Determine the difference between variation of PC and subsequent PC
+var.pcs <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = T)[1] + 1
+
+#last point where change of % of variation is more than 0.1%.
+var.pcs
+
+#Minimum of the two calculation
+pcs <- min(pcs.perc, var.pcs)
+pcs
+```
+
+```{r, fig.height=6, fig.width=12}
+#Create a dataframe with values
+plot_df <- data.frame(pct = pct,
+           cumulative_percentage = cumulative_percentage,
+           rank = 1:length(pct))
+
+#Elbow plot to visualize
+  ggplot(plot_df, aes(cumulative_percentage, pct, label = rank, color = rank > pcs)) +
+  geom_text() +
+  geom_vline(xintercept = 90, color = "blue", linetype="dashed", size=0.5) +
+  geom_hline(yintercept = min(pct[pct > 5]), color = "blue", linetype="dashed", size=0.5) +
+  theme_light() + scale_colour_discrete(l = 40)
+```
+
+Checking whether the Elbow methods agrees with the above number of pcs
+```{r, fig.width=7, fig.height=4}
+ElbowPlot(harmonized_object, reduction = "harmony_adt", ndims = 30)
+```
+
+## Calculating nearest neighbors based on a weighted combination of RNA and protein similarities
+
+Next, for each cell, its closest neighbors in the dataset are calculated based on a weighted combination of RNA
+and protein similarities. The cell-specific modality weights and multimodal neighbors are calculated in a single
+function. Specify the dimensionality of each modality (similar to specifying the number of PCs to include in
+scRNA-seq clustering), but these settings can be adjusted to see that **small changes have minimal effect on
+the overall results**.
+
+For most analyses in the manuscript, the authors use a default value of k = 20, which is also the default
+value of k in the standard Seurat clustering workflow
+```{r}
+# Identify multimodal neighbors. These will be stored in the neighbors slot,
+# and can be accessed using bm[['weighted.nn']]
+# The WNN graph can be accessed at bm[["wknn"]],
+# and the SNN graph used for clustering at bm[["wsnn"]]
+# Cell-specific modality weights can be accessed at bm$RNA.weight
+harmonized_object <- FindMultiModalNeighbors(
+  harmonized_object,
+  reduction.list = list("harmony_rna", "harmony_adt"), #A list of two dimensional reductions, one for each of the modalities to be integrated
+  dims.list = list(1:40, 1:15), modality.weight.name = "RNA.weight"
+) #1:45, 1:20
+```
+
+
+We can now use these results for downstream analysis, such as visualization and clustering. For example, we can create a UMAP visualization of the data based on a weighted combination of RNA and protein data We can also perform graph-based clustering and visualize these results on the UMAP, alongside a set of cell annotations.
+
+```{r, fig.width=7, fig.height=5, message=FALSE}
+DefaultAssay(harmonized_object)
+harmonized_object <- RunUMAP(harmonized_object, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_", assay = 'SCT')
+harmonized_object <- FindClusters(harmonized_object, graph.name = "wsnn", algorithm = 3, verbose = FALSE, assay = 'SCT') #resolution = 2,
+
+(p1 <- DimPlot(harmonized_object, reduction = 'wnn.umap'))
+```
+
+```{r, fig.width=12}
+p1 <- DimPlot(harmonized_object, reduction = 'wnn.umap', label = FALSE, repel = FALSE, label.size = 2.5) #+ NoLegend()
+p2 <- DimPlot(harmonized_object, reduction = 'wnn.umap', group.by = 'Sample', label = FALSE, repel = TRUE, label.size = 2.5) #+ NoLegend()
+p1 + p2
+```
+
+```{r, fig.width=7, fig.height=5, message=FALSE}
+#WNN with labels
+DimPlot(harmonized_object, reduction = 'wnn.umap', label = TRUE, repel = FALSE, label.size = 4) #+ theme_void(base_size = 14)
+```
+
+We can also compute UMAP visualization based on only the RNA and protein data and compare. We find that the RNA analysis is more informative than the ADT analysis in identifying progenitor states (the ADT panel contains markers for differentiated cells), while the converse is true of T cell states (where the ADT analysis outperforms RNA).
+
+```{r, fig.width=12}
+harmonized_object <- RunUMAP(harmonized_object, reduction = 'harmony_rna', dims = 1:40, assay = 'SCT',
+              reduction.name = 'rna.umap', reduction.key = 'rnaUMAP_')
+harmonized_object <- RunUMAP(harmonized_object, reduction = 'harmony_adt', dims = 1:15, assay = 'ADT',
+              reduction.name = 'adt.umap', reduction.key = 'adtUMAP_')
+```
+
+```{r}
+(p1 <- DimPlot(harmonized_object, reduction = 'wnn.umap',  group.by = "Sample"))
+```
+
+```{r, fig.width=20, fig.height=7,  message=FALSE}
+p3 <- DimPlot(harmonized_object, reduction = 'rna.umap',  label = FALSE,
+              repel = TRUE, label.size = 2.5) #+ NoLegend()
+p4 <- DimPlot(harmonized_object, reduction = 'adt.umap', label = FALSE,
+              repel = TRUE, label.size = 2.5) #+ NoLegend()
+p3 + p4
+
+
+pX <- DimPlot(harmonized_object, reduction = 'wnn.umap', group.by = 'Sample', label = FALSE,
+              repel = TRUE, label.size = 2.5) #+ NoLegend()
+p3 <- DimPlot(harmonized_object, reduction = 'rna.umap', group.by = 'Sample', label = FALSE,
+              repel = TRUE, label.size = 2.5) #+ NoLegend()
+p4 <- DimPlot(harmonized_object, reduction = 'adt.umap', group.by = 'Sample', label = FALSE,
+              repel = TRUE, label.size = 2.5) #+ NoLegend()
+pX+p3 + p4
+
+#Plotting rna and WNN side by side
+p1 <- DimPlot(harmonized_object, reduction = 'rna.umap',  label = FALSE, repel = TRUE, label.size = 2.5) + NoLegend()
+p2 <- DimPlot(harmonized_object, reduction = 'wnn.umap', label = FALSE, repel = TRUE, label.size = 2.5)# + NoLegend()
+p1 + p2
+
+
+p1 <- DimPlot(harmonized_object, reduction = 'wnn.umap', label = FALSE,
+              repel = FALSE, label.size = 4, pt.size = 0.1) #+ NoLegend()
+p2 <- DimPlot(harmonized_object, reduction = 'adt.umap', label = FALSE,
+              repel = FALSE, label.size = 4, pt.size = 0.1) #+ NoLegend()
+p3 <- DimPlot(harmonized_object, reduction = 'rna.umap', label = FALSE,
+              repel = FALSE, label.size = 4, pt.size = 0.1) #+ NoLegend()
+p1 +p3+ p2
+
+
+DimPlot(harmonized_object, reduction = 'wnn.umap', label = FALSE,
+              repel = FALSE, label.size = 4, pt.size = 0.1, split.by = "Sample") #+ NoLegend()
+
+DimPlot(harmonized_object, reduction = 'rna.umap', label = FALSE,
+              repel = FALSE, label.size = 4, pt.size = 0.1, split.by = "Sample") #+ NoLegend()
+```
+
+
+Visualizing the expression of canonical marker genes and proteins on the multimodal UMAP - we can further use this to assist in verifying any provided annotations:
+
+```{r, fig.width=20, fig.height=10}
+DefaultAssay(harmonized_object) <- 'RNA'
+p5 <- FeaturePlot(harmonized_object, features = c("Hu.CD103","Hu.CD11c","Hu.CD16"),
+                  reduction = 'wnn.umap', max.cutoff = 2,
+                  cols = c("lightgrey","darkgreen"), ncol = 3)
+p6 <- FeaturePlot(harmonized_object, features = c("rna_ITGAE","rna_ITGAX","rna_FCGR3A"),
+                  reduction = 'wnn.umap', max.cutoff = 3, ncol = 3)
+p5 / p6
+```
+
+```{r, fig.width=20, fig.height=10}
+p5 <- FeaturePlot(harmonized_object, features = c("Hu.CD14-M5E2","Hu.CD19","Hu.CD3-UCHT1"),
+                  reduction = 'wnn.umap', max.cutoff = 2,
+                  cols = c("lightgrey","darkgreen"), ncol = 3)
+p6 <- FeaturePlot(harmonized_object, features = c( "CD14", "CD19", "CD3E"),
+                  reduction = 'wnn.umap', max.cutoff = 3, ncol = 3)
+p5 / p6
+```
+
+```{r, fig.width=20, fig.height=10}
+p5 <- FeaturePlot(harmonized_object, features = c("Hu.CD33", "Hu.CD39", "Hu.CD8"),
+                  reduction = 'wnn.umap', max.cutoff = 2,
+                  cols = c("lightgrey","darkgreen"), ncol = 3)
+p6 <- FeaturePlot(harmonized_object, features = c( "CD33", "ENTPD1", "CD8A"),
+                  reduction = 'wnn.umap', max.cutoff = 3, ncol = 3)
+p5 / p6
+```
+
+
+```{r, fig.width=20, fig.height=10}
+p5 <- FeaturePlot(harmonized_object, features = c("Hu.CD49a", "Hu.CD8", "Hu.CD56"),
+                  reduction = 'wnn.umap', max.cutoff = 2,
+                  cols = c("lightgrey","darkgreen"), ncol = 3)
+p6 <- FeaturePlot(harmonized_object, features = c( "ITGA1", "CD8A", "NCAM1"),
+                  reduction = 'wnn.umap', max.cutoff = 3, ncol = 3)
+p5 / p6
+```
+
+
+Finally, we can visualize the modality weights that were learned for each cell. Based on the Seurat guide, each of the populations with the highest RNA weights represent progenitor cells (this was based on an analysis of PBMCs), while the populations with the highest protein weights represent T cells. This is in line with biological expectations, as the antibody panel does not contain markers that can distinguish between different progenitor populations.
+
+```{r, fig.width=20}
+(p1 <- VlnPlot(harmonized_object, features = "SCT.weight", sort = TRUE, pt.size = 0) + NoLegend())
+```
+
+```{r, fig.width=20}
+(p1 <- VlnPlot(harmonized_object, features = "ADT.weight", sort = TRUE, pt.size = 0) + NoLegend())
+```
+
+
+```{r}
+## Median modality weight - We can create other visualizations to show levels of expression
+features <- c("ITGAE", "ITGAX","FCGR3A", "ITGA1","CD69", "IL32", "NCAM1", "SPINK2")
+DotPlot(harmonized_object, features = features, cols = c("white", "chocolate3"))
+```
+
+### Saving cleaned dataset
+At this point we can save the cleaned dataset and recall it for further downstream analyses
+```{r}
+harmonized_object@assays
+saveRDS(harmonized_object, file="harmonized_object_clean.rds")
+```
+
+## Finding markers - needs to be on RNA assay:
+https://github.com/satijalab/seurat/discussions/4032
+satijalab: Thanks for asking. We had anticipated extending Seurat to actively support DE using the pearson residuals of sctransform, but have decided not to do so. In some cases, Pearson residuals may not be directly comparable across different datasets, particularly if there are batch effects that are unrelated to sequencing depth. While it is possible to correct these differences using the SCTransform-based integration workflow for the purposes of visualization/clustering/etc., we do not recommend running differential expression directly on Pearson residuals. Instead, we recommend running DE on the standard RNA assay.
+
+```{r}
+#No need to rerun this as it takes a while
+DefaultAssay(harmonized_object) <- 'RNA'
+cellsPerClust <- as.data.frame(table(harmonized_object@active.ident))
+colnames(cellsPerClust) <- c("Cluster", "nCells")
+cellsPerClust
+write.csv(cellsPerClust, file="Markers/cluster_cell_enumerations/cellsPerClust.csv")
+
+
+#cell counts by cluster by sample
+cellsPerClustPerSample <- as.data.frame(table(harmonized_object@meta.data$Sample, harmonized_object@meta.data$wsnn_res.0.8))
+
+colnames(cellsPerClustPerSample) <- c("Sample", "Cluster", "nCells")
+library(tidyr)
+cellsPerClustPerSample <- spread(cellsPerClustPerSample, key = Sample, value = nCells)
+cellsPerClustPerSample
+write.csv(cellsPerClustPerSample, file="Markers/cluster_cell_enumerations/cellsPerClustPerSample.csv")
+sum(cellsPerClustPerSample$nCells)
+```
+
+```{r}
+(clusters <- c(0, seq(1:27)))
+
+for(i in clusters){
+  cluster.markers <- FindMarkers(harmonized_object, ident.1 = i, min.pct = 0.25, logfc.threshold = 0.25, only.pos = FALSE)
+  #Extracting all markers (https://github.com/satijalab/seurat/issues/2154)
+  cluster.markers <- cluster.markers %>% arrange(desc(avg_log2FC))
+  write.csv(cluster.markers, file=paste0("Markers/RNA/All_Cluster", i, "_Markers_RNA.csv"))
+}
+
+DefaultAssay(harmonized_object) <- 'ADT'
+
+for(i in clusters){
+  cluster.markers <- FindMarkers(harmonized_object, ident.1 = i, min.pct = 0, logfc.threshold = 0, only.pos = FALSE)
+  # cluster.markers.n200 <- head(cluster.markers, n = 200)
+  cluster.markers <- cluster.markers %>% arrange(desc(avg_log2FC))
+  write.csv(cluster.markers, file=paste0("Markers/ADT/All_Cluster", i, "_Markers_ADT.csv"))
+}
+```
+
+## Generating Feature Plots
+```{r}
+DefaultAssay(harmonized_object) <- "ADT"
+antiobdy_tags <- rownames(harmonized_object)
+
+for(i in antiobdy_tags){
+  plot <- FeaturePlot(harmonized_object, features = i,
+                   reduction = 'wnn.umap', max.cutoff = 2,
+                   cols = c("gray90","darkgreen"), ncol = 1)
+  ggsave(file= paste0("Markers/ADT_Feature_Plots/",i,"_feature_plot.pdf"), plot, width=6, height=4, device="pdf", dpi=700)
+
+}
+```
+
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,170 @@
+---
+title: "Manuscript - A developmental program of early residency promotes the differentiation of divergent uterine NK cell subsets in humans"
+subtitle: "Removing Ambient RNA"
+author: "RA"
+output:
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    downcute_theme: "chaos"
+editor_options: 
+  chunk_output_type: console
+---
+
+### Load Required Packages
+```{r}
+suppressPackageStartupMessages({
+library(Seurat)
+  library(ggplot2)
+  library(patchwork)
+  library(dplyr)
+  library(hdf5r)
+  library(ape)
+  library(Rfast2)
+  library(RColorBrewer)
+  library(viridis)
+  library(data.table)
+  library(tidyverse)
+  library(magrittr)
+  library(gridExtra)
+  library(cowplot)
+  library(Matrix)
+  library(reticulate)
+  library(WebGestaltR)
+  library(harmony)
+  library(purrr)
+  library(usefun)
+  library(formattable)
+  library(splitstackshape)
+  library(formatR)
+  library(venn)
+  library(VennDiagram)
+  library(Hmisc)
+  library(interp)
+  library(SoupX)
+  library(knitr)
+  library(pheatmap)
+  library(DropletUtils)
+  library(celldex)
+  library(scater)
+  library(SingleCellExperiment)
+  library(AnnotationDbi)
+  library(org.Hs.eg.db)
+  library(EnsDb.Hsapiens.v86)
+  library(SingleR)
+  library(dittoSeq)
+  library(tidyr)
+  library(ggrepel)
+})
+```
+
+We'll start our analyses by assessing and removing ambient RNA in our dataset before proceeding with further downstream QC and analyses
+
+## [Removing Ambient RNA Using SoupX](https://academic.oup.com/gigascience/article/9/12/giaa151/6049831)
+Droplet based single cell RNA sequence analyses assume all acquired RNAs are endogenous to cells. However, any cell free RNAs contained within the input solution are also captured by these assays. This sequencing of cell free RNA constitutes a background contamination that has the potential to confound the correct biological interpretation of single cell transcriptomic data. Contamination from this “soup” of cell free RNAs is ubiquitous, experiment specific in its composition and magnitude, and can lead to erroneous biological conclusions. **SoupX** is a method used for quantifying the extent of the contamination and estimating “background corrected”, cell expression profiles that can be integrated with existing downstream analysis tools. soupX reduces batch effects, strengthens cell-specific quality control and improves biological interpretation
+
+The method to do this consists of three parts:
+
+1. Calculate the profile of the soup.
+2. Estimate the cell specific contamination fraction.
+3. Infer a corrected expression matrix.
+
+Various approaches of running soupX to estimate and remove soup contamination have been suggested here:
+
+https://cran.r-project.org/web/packages/SoupX/readme/README.html and here:
+
+https://rawcdn.githack.com/constantAmateur/SoupX/204b602418df12e9fdb4b68775a8b486c6504fe4/inst/doc/pbmcTutorial.html
+
+Prviously, we have worked with various methods such as running soupX by defining our own clusters, manually loading and decontaminating the data (leveraging clusters from cellranger analysis) and the automatic method of estimating the contamination fraction and decontaminate data. Leverages clustering information from cellranger. We shall use the latter method for our runs.
+
+## HC01
+```{r}
+sc1 = load10X("/cell_ranger_pipepline_analysis/HC01/outs/")
+
+str(sc1) 
+sc1 = autoEstCont(sc1)
+out1 = adjustCounts(sc1)
+dim(out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC01_soupX_filtered", out1)
+
+rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+## HC10	
+```{r}
+sc1 = load10X("/cellranger_pipeline_analysis/HC10/outs/")
+
+str(sc1) 
+sc1 = autoEstCont(sc1)
+out1 = adjustCounts(sc1)
+dim(out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC10_soupX_filtered", out1)
+
+rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+## HC12
+```{r}
+sc1 = load10X("/cellranger_pipeline_analysis/HC12/outs/")
+
+str(sc1) 
+sc1 = autoEstCont(sc1)
+out1 = adjustCounts(sc1)
+dim(out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC12_soupX_filtered", out1)
+
+rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+## HC18
+```{r}
+sc1 = load10X("/cell_ranger_pipepline_analysis/HC18/outs/")
+
+str(sc1) 
+sc1 = autoEstCont(sc1)
+out1 = adjustCounts(sc1)
+dim(out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC18_soupX_filtered", out1)
+
+rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+## HC19
+```{r}
+sc1 = load10X("/cell_ranger_pipepline_analysis/HC19/outs/")
+
+str(sc1) 
+sc1 = autoEstCont(sc1)
+out1 = adjustCounts(sc1)
+dim(out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC19_soupX_filtered", out1)
+
+rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+## HC20
+```{r}
+sc1 = load10X("/cell_ranger_pipepline_analysis/HC20/outs/")
+
+str(sc1) 
+sc1 = autoEstCont(sc1)
+out1 = adjustCounts(sc1)
+dim(out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC20_soupX_filtered", out1)
+
+rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+
+```{r}
+sessionInfo()
+```
+
+

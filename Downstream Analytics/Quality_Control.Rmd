@@ -1,0 +1,1959 @@
+---
+title: "Manuscript - A developmental program of early residency promotes the differentiation of divergent uterine NK cell subsets in humans"
+subtitle: "Quality Control"
+author: "RA"
+output:
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    downcute_theme: "chaos"
+editor_options: 
+  chunk_output_type: console
+---
+
+### Load Required Packages
+```{r}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(ggplot2)
+  library(patchwork)
+  library(dplyr)
+  library(hdf5r)
+  library(ape)
+  library(Rfast2)
+  library(RColorBrewer)
+  library(viridis)
+  library(data.table)
+  library(tidyverse)
+  library(magrittr)
+  library(gridExtra)
+  library(cowplot)
+  library(Matrix)
+  library(reticulate)
+  library(WebGestaltR)
+  library(harmony)
+  library(purrr)
+  library(usefun)
+  library(formattable)
+  library(splitstackshape)
+  library(formatR)
+  library(venn)
+  library(VennDiagram)
+  library(Hmisc)
+  library(interp)
+  library(SoupX)
+  library(knitr)
+  library(pheatmap)
+})
+```
+
+## Loading soupX-Corrected Seurat Objects
+```{r}
+file_paths <- list.files(path = here::here("soupx-corrected_seurat_objects/"), pattern = ".rds", full.names = TRUE)
+
+file_names <- gsub(pattern = "_SeuratObj.rds", replacement = "", x = basename(file_paths))
+
+for(i in 1:length(file_names)){
+  assign(file_names[i],readRDS(file_paths[i]))
+}
+
+#Checking data integrity on import
+x <- readRDS("soupx-corrected_seurat_objects/HC20_SeuratObj.rds")
+all.equal(x, HC20)
+
+x <- readRDS("soupx-corrected_seurat_objects/HC19_SeuratObj.rds")
+all.equal(x, HC19)
+
+rm(x)
+```
+
+## Checking/Validating Details of each Object
+
+Validate cell prefix, orig.ident, Phase, Sequencing, and Sample_Group
+```{r}
+HC01
+head(HC01@meta.data)
+HC01@assays
+
+HC10
+head(HC10@meta.data)
+HC10@assays
+
+HC12
+head(HC12@meta.data)
+HC12@assays
+
+HC18
+head(HC18@meta.data)
+HC18@assays
+
+HC19
+head(HC19@meta.data)
+HC19@assays
+
+HC20
+head(HC20@meta.data)
+HC20@assays
+```
+
+Given 10 samples have two assays, for this run, we need to specify which assay we are working with at a time like so (we'll set the assay to RNA):
+```{r}
+DefaultAssay(HC01) <- 'RNA' 
+DefaultAssay(HC10) <- 'RNA' 
+DefaultAssay(HC12) <- 'RNA' 
+DefaultAssay(HC18) <- 'RNA' 
+DefaultAssay(HC19) <- 'RNA' 
+DefaultAssay(HC20) <- 'RNA' 
+```
+
+## Conducting QC on Each Sample - Standard Pre-processing Workflow
+
+The steps below encompass the standard pre-processing workflow for scRNA-seq data in Seurat. These represent the selection and filtration of cells based on QC metrics, data normalization and scaling, and the detection of highly variable features.
+
+## Quality Control (QC)
+
+Seurat allows us to easily explore QC metrics and filter cells based on any user-defined criteria. A few QC metrics [commonly used](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4758103/) by the community include:
+
+* The number of unique genes detected in each cell. 
++ Low-quality cells or empty droplets will often have very few genes
++ Cell doublets or multiplets may exhibit an aberrantly high gene count
+* Similarly, the total number of molecules detected within a cell (correlates strongly with unique genes)
+* The percentage of reads that map to the mitochondrial genome
++ Low-quality or dying cells often exhibit extensive mitochondrial contamination
++ We calculate mitochondrial QC metrics with the `PercentageFeatureSet()` function, which calculates the percentage of counts originating from a set of features
++ We use the set of all genes starting with `MT-` as a set of mitochondrial genes
+
+
+## HC01 QC
+```{r,fig.height=7, fig.width=13}
+#We'll store the percentage of reads that map to the mitochondrial genome in the metadata object as "percent.mt"
+HC01[["percent.mt"]] <- PercentageFeatureSet(HC01, pattern = "^MT-")
+
+#The number of unique genes and total molecules are automatically calculated during `CreateSeuratObject()` and we can find these stored in the object meta data as nFeature_RNA and nCount_RNA respecitvely.
+HC01@meta.data %>%
+  head(n=5)
+```
+
+**Visualize QC metrics, and use these to filter cells**
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC01, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC01, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC01, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+```
+
+```{r, message=FALSE, fig.width=20, fig.height=7}
+#FeatureScatter is typically used to visualize feature-feature relationships, but can be used for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+plot1 <- FeatureScatter(HC01, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "gray60")
+plot2 <- FeatureScatter(HC01, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", cols = "gray60")
+plot1 + plot2
+```
+
+**Alternative view of the data and distributions**
+```{r, fig.height=3}
+df <- as.data.table(HC01@meta.data)
+sel <- c("orig.ident", "nCount_RNA", "nFeature_RNA", "percent.mt")
+df <- df[, sel, with = FALSE]
+df[1:3, ]
+fontsize <- 10
+linesize <- 0.35
+
+gp.ls <- df[, 2:4] %>% imap( ~ {
+
+  # define lable function
+  give.n <- function(x) {
+    return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
+  }
+
+  # assign colors
+  col.ls <-
+    setNames(
+      c('gray50', 'gray70', 'gray90', "gray" ),
+      c("nCount_RNA", "nFeature_RNA", "percent.mt", "log10GenesPerUMI")
+    )
+
+  ggplot(data = df, aes(x = orig.ident, y = .x)) +
+    geom_violin(trim = FALSE, fill = col.ls[.y]) +
+    ggtitle(label = .y) + ylab(label = .y) +
+    theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      panel.border = element_blank()
+    ) +
+    theme(
+      axis.text = element_text(size = fontsize),
+      axis.line = element_line(colour = "black", size = linesize),
+      axis.ticks = element_line(size = linesize),
+      axis.title.x = element_blank(),
+      axis.ticks.length = unit(.05, "cm"),
+      plot.title = element_text(size = fontsize + 2, hjust = 0.5),
+      legend.position = 'none'
+    ) +
+    stat_summary(fun = median, geom = "point", col = "black") +  
+    stat_summary(fun.data = give.n,
+                 geom = "text",
+                 col = "black") + theme_light()
+})
+
+grid.arrange(gp.ls[[1]], gp.ls[[2]], gp.ls[[3]], ncol = 3)
+```
+
+### Number of cell counts per sample before filtering
+```{r, fig.height=4, fig.width=2}
+metadata <- HC01@meta.data
+# Add cell IDs to metadata
+metadata$cells <- rownames(metadata)
+
+# Rename columns
+metadata <- metadata %>%
+  dplyr::rename(nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+unique(metadata$orig.ident)
+# Visualize the number of cell counts per sample
+metadata %>%
+  ggplot(aes(x=orig.ident, fill=orig.ident)) +
+  geom_bar(color = "gray80", fill = "gray80") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells") + theme(legend.position = "none") +
+  theme(legend.position = "none") +
+  geom_text(stat='count', aes(label=..count..), vjust = 0.5)
+```
+
+### Number UMIs/transcripts per cell
+```{r, fig.width=4, fig.height=3}
+#Visualize the number UMIs/transcripts per cell
+ggplot(metadata, aes(x = nUMI)) +
+  geom_histogram(aes(y = ..density..),
+                 alpha = 0.3, color="gray50", fill="white") +
+  scale_x_log10() +
+  theme_classic() +
+  ylab("Cell density/UMI counts per cell") +
+  geom_vline(xintercept = 500) + theme(legend.position = "none")+
+  geom_density(lwd = 0.5, colour = 4,
+               fill = 4, alpha = 0.1)
+#The UMI counts per cell should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply
+```
+
+### More on Data and QC
+```{r, message=FALSE, warning=FALSE, fig.height=4, fig.width=6}
+counts <- Matrix(HC01@assays$RNA@counts)
+counts_per_cell <- Matrix::colSums(counts)
+counts_per_gene <- Matrix::rowSums(counts)
+genes_per_cell1 <- Matrix::colSums(counts>0) #count a gene only if it has non-zero reads mapped.
+cells_per_gene <- Matrix::rowSums(counts>0) #only count cells where the gene is expressed
+
+counts_per_cell <- as.data.frame(colSums(counts))
+counts_per_gene <- as.data.frame(rowSums(counts))
+genes_per_cell <- as.data.frame(colSums(counts>0))
+cells_per_gene <- as.data.frame(rowSums(counts>0) )
+
+colnames(counts_per_cell) <- "counts"
+colnames(counts_per_gene) <- "counts"
+colnames(genes_per_cell) <- "genes_per_cell"
+colnames(cells_per_gene) <- "cells_per_gene"
+
+df <- cbind(counts_per_cell, genes_per_cell)
+
+ggplot(df, aes(x=counts, y=genes_per_cell)) + geom_point(color="gray30") + scale_y_continuous(trans='log10') + scale_x_continuous(trans='log10') + theme_light()
+
+#Plot cells ranked by their number of detected genes.
+genes_per_cell$cells <- rownames(genes_per_cell)
+
+#set upper and lower thresholds for genes per cell - the upper and lower limit curve bends give a good clue on what thresholds to set:
+min_genes_per_cell <- 200
+max_genes_per_cell <- 3500
+
+ggplot(genes_per_cell, aes(x=reorder(genes_per_cell, cells), y=genes_per_cell)) + geom_point() +
+  scale_y_continuous(trans='log10', breaks=seq(0, 5000, by = 1000)) + ggtitle("Genes per Cell") + theme_test(base_size = 12) +
+  geom_hline(aes(yintercept=min_genes_per_cell),
+             color="blue", linetype="dashed", size=0.5) +
+  geom_hline(aes(yintercept=max_genes_per_cell), color="blue", linetype="dashed", size=0.5) + labs(x= "Cells", y="Number of Genes") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+```
+
+### Percent MT Distribution
+```{r fig.width=12, fig.height=6}
+#Density plot
+ggplot(HC01@meta.data, aes(x=HC01@meta.data$percent.mt)) +
+  geom_density() + scale_color_manual(values=c("blue")) + theme_classic() +
+  geom_vline(aes(xintercept=mean(HC01@meta.data$percent.mt)),
+             color="blue", linetype="dashed", size=0.5) +scale_x_continuous(breaks=seq(0, 40, by = 1))
+```
+
+### Data Filtering
+```{r}
+(Count93_nCount_RNA <- quantile(HC01@meta.data$nCount_RNA, 0.93)) # calculate value in the 93rd percentile for a hint on thresholds but these should be taken with a grain of salt, look at the above plots as well to determine thresholds
+(Count93_nFeature_RNA <- quantile(HC01@meta.data$nFeature_RNA, 0.93))
+(Count93_percent_mt <-  quantile(HC01@meta.data$percent.mt, 0.93))
+
+summary(HC01@meta.data$nCount_RNA)
+summary(HC01@meta.data$nFeature_RNA)
+
+HC01 <- subset(HC01, subset = nFeature_RNA > 200 & nFeature_RNA < 3500 & percent.mt < 8)
+```
+
+### Data after filtering based on above thresholds
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC01, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC01, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC01, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC01)
+```
+
+## Doublet Removal
+Detection of doublets was conducted in python using [scrublet](https://github.com/swolock/scrublet) and a file containing scrublet calls/predictions was written out. This file was then loaded into R to use as a basis for filtering out doublets.
+
+Visualization of the doublet predictions in a 2-D embedding/UAMP: Predicted doublets should mostly co-localize (possibly in multiple clusters). If they do not, you may need to adjust the doublet score threshold, or change the pre-processing parameters to better resolve the cell states present in your data.
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC01/HC01_doublet_predictions.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+The simulated doublet histogram below should typically be bimodal. The left mode corresponds to "embedded" doublets generated by two cells with similar gene expression. The right mode corresponds to "neotypic" doublets, which are generated by cells with distinct gene expression (e.g., different cell types) and are expected to introduce more artifacts in downstream analyses. Scrublet can only detect neotypic doublets.
+This histogram is an important diagnostic plot. Doublet score threshold should separate the two shoulders of the bimodal distribution as shown below:
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC01/HC01_doublet_predictions_histogram.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+```{r out.height = "460px", out.width='800px', echo=F, eval=FALSE}
+knitr::include_graphics('/scrublet_predictions/HC01/HC01_doublet_predictions_histogram.pdf')
+```
+
+```{r}
+#Loading scrublet predictions
+dim(scrublet_calls <- read.csv("/scrublet_predictions/HC01/HC01_scrublet_calls.csv"))
+table(scrublet_calls$predicted_doublets)
+
+scrublet_calls$X <- paste0("Early_Secretory_HC01_", scrublet_calls$X)
+
+dim(scrublet_calls <- scrublet_calls[which(scrublet_calls$X %in% rownames(HC01@meta.data)),])
+rownames(scrublet_calls) <- scrublet_calls$X
+scrublet_calls$X <-NULL
+dim(scrublet_calls)
+
+#Adding doublet information to metadata
+#First we'll ensure that the rownames in HC01 match the rownames in scrublet_calls. AddMetaData maps rownames but we'll still do so to ensure that mapping of predictions are made to respective bar codes
+scrublet_calls <- scrublet_calls[rownames(HC01@meta.data), ]
+head(rownames(scrublet_calls))
+head(rownames(HC01@meta.data))
+HC01 <- AddMetaData(HC01, scrublet_calls)
+```
+
+```{r, fig.height=4, fig.width=5}
+#Without normalizing the data, we want to first visualize the doublets in our datasets
+HC01_Control_2 <- HC01
+HC01_Control_2 <- FindVariableFeatures(HC01_Control_2, selection.method = "vst", nfeatures = 2500)
+HC01_Control_2 <- ScaleData(object = HC01_Control_2, scale.max = 30,  verbose = FALSE)
+HC01_Control_2 <- RunPCA(object = HC01_Control_2, npcs = 30, verbose = FALSE)
+HC01_Control_2 <- FindNeighbors(HC01_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC01_Control_2 <- RunUMAP(HC01_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC01_Control_2 <- FindClusters(HC01_Control_2, verbose = TRUE, reduction = "pca") #Resolution can be adjusted - leaving to default for now in test dataset
+
+FeaturePlot(HC01_Control_2, features = "doublet_scores", pt.size = 0.01)
+
+DimPlot(HC01_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"))
+
+#Checking the nUMI for doublets and singlets
+VlnPlot(HC01_Control_2,
+        features = "nCount_RNA",
+        pt.size = 0,
+        group.by = "predicted_doublets") + NoLegend()
+
+#Fractions of doublets per cluster
+df <- data.table(HC01_Control_2@meta.data)
+
+perc <- as.data.frame(df %>%
+                        group_by(seurat_clusters, predicted_doublets) %>%
+                        dplyr::summarise(cnt = n()) %>%
+                        mutate(freq = formattable::percent(cnt / sum(cnt), digits = 5)))
+
+perc$predicted_doublets <- as.character(perc$predicted_doublets)
+perc$predicted_doublets[perc$predicted_doublets == "True"] <- "Doublet"
+perc$predicted_doublets[perc$predicted_doublets == "False"] <- "Singlet"
+```
+
+```{r, fig.height=3.5, fig.width=7}
+perc %>%
+  ggplot() +
+  geom_bar(aes(x = seurat_clusters, y=freq,
+               group = predicted_doublets,
+               fill = predicted_doublets),
+           stat = "identity", width = 0.99, alpha = 0.9) +
+  theme_test()+
+  labs(y=paste0("% Distribution of doublets and singlets per cluster"), x="") +
+  scale_fill_manual(values = c("Doublet" = 'firebrick4', "Singlet" = "dodgerblue4")) +
+  theme(legend.position = "right") +scale_y_continuous(expand = c(0,0))
+```
+
+```{r, fig.height=4, fig.width=5}
+#Next we'll remove the doublets and see what the data looks like
+HC01_Control_2 <- HC01_Control_2[, HC01_Control_2@meta.data[, "predicted_doublets"] == "False"]
+unique(HC01_Control_2@meta.data$predicted_doublets)
+DimPlot(HC01_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"), label = TRUE)
+```
+
+**Filtering cells to remove doublets**
+```{r}
+HC01 <- HC01[, HC01@meta.data[, "predicted_doublets"] == "False"]
+unique(HC01@meta.data$predicted_doublets)
+dim(HC01)
+```
+
+### Data after filtering doublets
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC01, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC01, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC01, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC01)
+```
+
+### Saving object for further downstream analysis
+```{r}
+saveRDS(HC01, file = "/QC/HC01_SeuratObject_soupX_doublet_QC_filtered.rds")
+rm(HC01)
+gc()
+```
+
+## HC10 QC
+```{r,fig.height=7, fig.width=13}
+#We'll store the percentage of reads that map to the mitochondrial genome in the metadata object as "percent.mt"
+HC10[["percent.mt"]] <- PercentageFeatureSet(HC10, pattern = "^MT-")
+
+#The number of unique genes and total molecules are automatically calculated during `CreateSeuratObject()` and we can find these stored in the object meta data as nFeature_RNA and nCount_RNA respecitvely.
+HC10@meta.data %>%
+  head(n=5)
+```
+
+**Visualize QC metrics, and use these to filter cells**
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC10, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC10, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC10, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+```
+
+```{r, message=FALSE, fig.width=20, fig.height=7}
+#FeatureScatter is typically used to visualize feature-feature relationships, but can be used for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+plot1 <- FeatureScatter(HC10, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "gray60")
+plot2 <- FeatureScatter(HC10, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", cols = "gray60")
+plot1 + plot2
+```
+
+**Alternative view of the data and distributions**
+```{r, fig.height=3}
+df <- as.data.table(HC10@meta.data)
+sel <- c("orig.ident", "nCount_RNA", "nFeature_RNA", "percent.mt")
+df <- df[, sel, with = FALSE]
+df[1:3, ]
+fontsize <- 10
+linesize <- 0.35
+
+gp.ls <- df[, 2:4] %>% imap( ~ {
+
+  # define lable function
+  give.n <- function(x) {
+    return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
+  }
+
+  # assign colors
+  col.ls <-
+    setNames(
+      c('gray50', 'gray70', 'gray90', "gray" ),
+      c("nCount_RNA", "nFeature_RNA", "percent.mt", "log10GenesPerUMI")
+    )
+
+  ggplot(data = df, aes(x = orig.ident, y = .x)) +
+    geom_violin(trim = FALSE, fill = col.ls[.y]) +
+    ggtitle(label = .y) + ylab(label = .y) +
+    theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      panel.border = element_blank()
+    ) +
+    theme(
+      axis.text = element_text(size = fontsize),
+      axis.line = element_line(colour = "black", size = linesize),
+      axis.ticks = element_line(size = linesize),
+      axis.title.x = element_blank(),
+      axis.ticks.length = unit(.05, "cm"),
+      plot.title = element_text(size = fontsize + 2, hjust = 0.5),
+      legend.position = 'none'
+    ) +
+    stat_summary(fun = median, geom = "point", col = "black") +  
+    stat_summary(fun.data = give.n,
+                 geom = "text",
+                 col = "black") + theme_light()
+})
+
+grid.arrange(gp.ls[[1]], gp.ls[[2]], gp.ls[[3]], ncol = 3)
+```
+
+### Number of cell counts per sample before filtering
+```{r, fig.height=4, fig.width=2}
+metadata <- HC10@meta.data
+# Add cell IDs to metadata
+metadata$cells <- rownames(metadata)
+
+# Rename columns
+metadata <- metadata %>%
+  dplyr::rename(nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+unique(metadata$orig.ident)
+# Visualize the number of cell counts per sample
+metadata %>%
+  ggplot(aes(x=orig.ident, fill=orig.ident)) +
+  geom_bar(color = "gray80", fill = "gray80") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells") + theme(legend.position = "none") +
+  theme(legend.position = "none") +
+  geom_text(stat='count', aes(label=..count..), vjust = 0.5)
+```
+
+### Number UMIs/transcripts per cell
+```{r, fig.width=4, fig.height=3}
+#Visualize the number UMIs/transcripts per cell
+ggplot(metadata, aes(x = nUMI)) +
+  geom_histogram(aes(y = ..density..),
+                 alpha = 0.3, color="gray50", fill="white") +
+  scale_x_log10() +
+  theme_classic() +
+  ylab("Cell density/UMI counts per cell") +
+  geom_vline(xintercept = 500) + theme(legend.position = "none")+
+  geom_density(lwd = 0.5, colour = 4,
+               fill = 4, alpha = 0.1)
+#The UMI counts per cell should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply
+```
+
+### More on Data and QC
+```{r, message=FALSE, warning=FALSE, fig.height=4, fig.width=6}
+counts <- Matrix(HC10@assays$RNA@counts)
+counts_per_cell <- Matrix::colSums(counts)
+counts_per_gene <- Matrix::rowSums(counts)
+genes_per_cell1 <- Matrix::colSums(counts>0) #count a gene only if it has non-zero reads mapped.
+cells_per_gene <- Matrix::rowSums(counts>0) #only count cells where the gene is expressed
+
+counts_per_cell <- as.data.frame(colSums(counts))
+counts_per_gene <- as.data.frame(rowSums(counts))
+genes_per_cell <- as.data.frame(colSums(counts>0))
+cells_per_gene <- as.data.frame(rowSums(counts>0) )
+
+colnames(counts_per_cell) <- "counts"
+colnames(counts_per_gene) <- "counts"
+colnames(genes_per_cell) <- "genes_per_cell"
+colnames(cells_per_gene) <- "cells_per_gene"
+
+df <- cbind(counts_per_cell, genes_per_cell)
+
+ggplot(df, aes(x=counts, y=genes_per_cell)) + geom_point(color="gray30") + scale_y_continuous(trans='log10') + scale_x_continuous(trans='log10') + theme_light()
+
+#Plot cells ranked by their number of detected genes.
+genes_per_cell$cells <- rownames(genes_per_cell)
+
+#set upper and lower thresholds for genes per cell - the upper and lower limit curve bends give a good clue on what thresholds to set:
+min_genes_per_cell <- 200
+max_genes_per_cell <- 3500
+
+ggplot(genes_per_cell, aes(x=reorder(genes_per_cell, cells), y=genes_per_cell)) + geom_point() +
+  scale_y_continuous(trans='log10', breaks=seq(0, 5000, by = 1000)) + ggtitle("Genes per Cell") + theme_test(base_size = 12) +
+  geom_hline(aes(yintercept=min_genes_per_cell),
+             color="blue", linetype="dashed", size=0.5) +
+  geom_hline(aes(yintercept=max_genes_per_cell), color="blue", linetype="dashed", size=0.5) + labs(x= "Cells", y="Number of Genes") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+```
+
+### Percent MT Distribution
+```{r fig.width=12, fig.height=6}
+#Density plot
+ggplot(HC10@meta.data, aes(x=HC10@meta.data$percent.mt)) +
+  geom_density() + scale_color_manual(values=c("blue")) + theme_classic() +
+  geom_vline(aes(xintercept=mean(HC10@meta.data$percent.mt)),
+             color="blue", linetype="dashed", size=0.5) +scale_x_continuous(breaks=seq(0, 40, by = 1))
+```
+
+### Data Filtering
+```{r}
+(Count93_nCount_RNA <- quantile(HC10@meta.data$nCount_RNA, 0.93)) # calculate value in the 93rd percentile for a hint on thresholds but these should be taken with a grain of salt, look at the above plots as well to determine thresholds
+(Count93_nFeature_RNA <- quantile(HC10@meta.data$nFeature_RNA, 0.93))
+(Count93_percent_mt <-  quantile(HC10@meta.data$percent.mt, 0.93))
+
+summary(HC10@meta.data$nCount_RNA)
+summary(HC10@meta.data$nFeature_RNA)
+
+HC10 <- subset(HC10, subset = nFeature_RNA > 200 & nFeature_RNA < 3500 & percent.mt < 9)
+```
+
+### Data after filtering based on above thresholds
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC10, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC10, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC10, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC10)
+```
+
+## Doublet Removal
+Detection of doublets was conducted in python using [scrublet](https://github.com/swolock/scrublet) and a file containing scrublet calls/predictions was written out. This file was then loaded into R to use as a basis for filtering out doublets.
+
+Visualization of the doublet predictions in a 2-D embedding/UAMP: Predicted doublets should mostly co-localize (possibly in multiple clusters). If they do not, you may need to adjust the doublet score threshold, or change the pre-processing parameters to better resolve the cell states present in your data.
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC10/HC10_doublet_predictions.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+The simulated doublet histogram below should typically be bimodal. The left mode corresponds to "embedded" doublets generated by two cells with similar gene expression. The right mode corresponds to "neotypic" doublets, which are generated by cells with distinct gene expression (e.g., different cell types) and are expected to introduce more artifacts in downstream analyses. Scrublet can only detect neotypic doublets.
+This histogram is an important diagnostic plot. Doublet score threshold should separate the two shoulders of the bimodal distribution as shown below:
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC10/HC10_doublet_predictions_histogram.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+```{r out.height = "460px", out.width='800px', echo=F, eval=FALSE}
+knitr::include_graphics('/scrublet_predictions/HC10/HC10_doublet_predictions_histogram.pdf')
+```
+
+```{r}
+#Loading scrublet predictions
+dim(scrublet_calls <- read.csv("/scrublet_predictions/HC10/HC10_scrublet_calls.csv"))
+table(scrublet_calls$predicted_doublets)
+
+scrublet_calls$X <- paste0("Mid_Secretory_HC10_", scrublet_calls$X)
+
+dim(scrublet_calls <- scrublet_calls[which(scrublet_calls$X %in% rownames(HC10@meta.data)),])
+rownames(scrublet_calls) <- scrublet_calls$X
+scrublet_calls$X <-NULL
+dim(scrublet_calls)
+
+#Adding doublet information to metadata
+#First we'll ensure that the rownames in HC10 match the rownames in scrublet_calls. AddMetaData maps rownames but we'll still do so to ensure that mapping of predictions are made to respective bar codes
+scrublet_calls <- scrublet_calls[rownames(HC10@meta.data), ]
+head(rownames(scrublet_calls))
+head(rownames(HC10@meta.data))
+HC10 <- AddMetaData(HC10, scrublet_calls)
+```
+
+```{r, fig.height=4, fig.width=5}
+#Without normalizing the data, we want to first visualize the doublets in our datasets
+HC10_Control_2 <- HC10
+HC10_Control_2 <- FindVariableFeatures(HC10_Control_2, selection.method = "vst", nfeatures = 2500)
+HC10_Control_2 <- ScaleData(object = HC10_Control_2, scale.max = 30,  verbose = FALSE)
+HC10_Control_2 <- RunPCA(object = HC10_Control_2, npcs = 30, verbose = FALSE)
+HC10_Control_2 <- FindNeighbors(HC10_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC10_Control_2 <- RunUMAP(HC10_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC10_Control_2 <- FindClusters(HC10_Control_2, verbose = TRUE, reduction = "pca") #Resolution can be adjusted - leaving to default for now in test dataset
+
+FeaturePlot(HC10_Control_2, features = "doublet_scores", pt.size = 0.01)
+
+DimPlot(HC10_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"))
+
+#Checking the nUMI for doublets and singlets
+VlnPlot(HC10_Control_2,
+        features = "nCount_RNA",
+        pt.size = 0,
+        group.by = "predicted_doublets") + NoLegend()
+
+#Fractions of doublets per cluster
+df <- data.table(HC10_Control_2@meta.data)
+
+perc <- as.data.frame(df %>%
+                        group_by(seurat_clusters, predicted_doublets) %>%
+                        dplyr::summarise(cnt = n()) %>%
+                        mutate(freq = formattable::percent(cnt / sum(cnt), digits = 5)))
+
+perc$predicted_doublets <- as.character(perc$predicted_doublets)
+perc$predicted_doublets[perc$predicted_doublets == "True"] <- "Doublet"
+perc$predicted_doublets[perc$predicted_doublets == "False"] <- "Singlet"
+```
+
+```{r, fig.height=3.5, fig.width=7}
+perc %>%
+  ggplot() +
+  geom_bar(aes(x = seurat_clusters, y=freq,
+               group = predicted_doublets,
+               fill = predicted_doublets),
+           stat = "identity", width = 0.99, alpha = 0.9) +
+  theme_test()+
+  labs(y=paste0("% Distribution of doublets and singlets per cluster"), x="") +
+  scale_fill_manual(values = c("Doublet" = 'firebrick4', "Singlet" = "dodgerblue4")) +
+  theme(legend.position = "right") +scale_y_continuous(expand = c(0,0))
+```
+
+```{r, fig.height=4, fig.width=5}
+#Next we'll remove the doublets and see what the data looks like
+HC10_Control_2 <- HC10_Control_2[, HC10_Control_2@meta.data[, "predicted_doublets"] == "False"]
+unique(HC10_Control_2@meta.data$predicted_doublets)
+DimPlot(HC10_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"), label = TRUE)
+```
+
+**Filtering cells to remove doublets**
+```{r}
+HC10 <- HC10[, HC10@meta.data[, "predicted_doublets"] == "False"]
+unique(HC10@meta.data$predicted_doublets)
+dim(HC10)
+```
+
+### Data after filtering doublets
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC10, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC10, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC10, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC10)
+```
+
+### Saving object for further downstream analysis
+```{r}
+saveRDS(HC10, file = "/QC/HC10_SeuratObject_soupX_doublet_QC_filtered.rds")
+rm(HC10)
+gc()
+```
+
+## HC12 QC
+```{r,fig.height=7, fig.width=13}
+#We'll store the percentage of reads that map to the mitochondrial genome in the metadata object as "percent.mt"
+HC12[["percent.mt"]] <- PercentageFeatureSet(HC12, pattern = "^MT-")
+
+#The number of unique genes and total molecules are automatically calculated during `CreateSeuratObject()` and we can find these stored in the object meta data as nFeature_RNA and nCount_RNA respecitvely.
+HC12@meta.data %>%
+  head(n=5)
+```
+
+**Visualize QC metrics, and use these to filter cells**
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC12, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC12, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC12, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+```
+
+```{r, message=FALSE, fig.width=20, fig.height=7}
+#FeatureScatter is typically used to visualize feature-feature relationships, but can be used for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+plot1 <- FeatureScatter(HC12, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "gray60")
+plot2 <- FeatureScatter(HC12, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", cols = "gray60")
+plot1 + plot2
+```
+
+**Alternative view of the data and distributions**
+```{r, fig.height=3}
+df <- as.data.table(HC12@meta.data)
+sel <- c("orig.ident", "nCount_RNA", "nFeature_RNA", "percent.mt")
+df <- df[, sel, with = FALSE]
+df[1:3, ]
+fontsize <- 10
+linesize <- 0.35
+
+gp.ls <- df[, 2:4] %>% imap( ~ {
+
+  # define lable function
+  give.n <- function(x) {
+    return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
+  }
+
+  # assign colors
+  col.ls <-
+    setNames(
+      c('gray50', 'gray70', 'gray90', "gray" ),
+      c("nCount_RNA", "nFeature_RNA", "percent.mt", "log10GenesPerUMI")
+    )
+
+  ggplot(data = df, aes(x = orig.ident, y = .x)) +
+    geom_violin(trim = FALSE, fill = col.ls[.y]) +
+    ggtitle(label = .y) + ylab(label = .y) +
+    theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      panel.border = element_blank()
+    ) +
+    theme(
+      axis.text = element_text(size = fontsize),
+      axis.line = element_line(colour = "black", size = linesize),
+      axis.ticks = element_line(size = linesize),
+      axis.title.x = element_blank(),
+      axis.ticks.length = unit(.05, "cm"),
+      plot.title = element_text(size = fontsize + 2, hjust = 0.5),
+      legend.position = 'none'
+    ) +
+    stat_summary(fun = median, geom = "point", col = "black") +  
+    stat_summary(fun.data = give.n,
+                 geom = "text",
+                 col = "black") + theme_light()
+})
+
+grid.arrange(gp.ls[[1]], gp.ls[[2]], gp.ls[[3]], ncol = 3)
+```
+
+### Number of cell counts per sample before filtering
+```{r, fig.height=4, fig.width=2}
+metadata <- HC12@meta.data
+# Add cell IDs to metadata
+metadata$cells <- rownames(metadata)
+
+# Rename columns
+metadata <- metadata %>%
+  dplyr::rename(nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+unique(metadata$orig.ident)
+# Visualize the number of cell counts per sample
+metadata %>%
+  ggplot(aes(x=orig.ident, fill=orig.ident)) +
+  geom_bar(color = "gray80", fill = "gray80") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells") + theme(legend.position = "none") +
+  theme(legend.position = "none") +
+  geom_text(stat='count', aes(label=..count..), vjust = 0.5)
+```
+
+### Number UMIs/transcripts per cell
+```{r, fig.width=4, fig.height=3}
+#Visualize the number UMIs/transcripts per cell
+ggplot(metadata, aes(x = nUMI)) +
+  geom_histogram(aes(y = ..density..),
+                 alpha = 0.3, color="gray50", fill="white") +
+  scale_x_log10() +
+  theme_classic() +
+  ylab("Cell density/UMI counts per cell") +
+  geom_vline(xintercept = 500) + theme(legend.position = "none")+
+  geom_density(lwd = 0.5, colour = 4,
+               fill = 4, alpha = 0.1)
+#The UMI counts per cell should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply
+```
+
+### More on Data and QC
+```{r, message=FALSE, warning=FALSE, fig.height=4, fig.width=6}
+counts <- Matrix(HC12@assays$RNA@counts)
+counts_per_cell <- Matrix::colSums(counts)
+counts_per_gene <- Matrix::rowSums(counts)
+genes_per_cell1 <- Matrix::colSums(counts>0) #count a gene only if it has non-zero reads mapped.
+cells_per_gene <- Matrix::rowSums(counts>0) #only count cells where the gene is expressed
+
+counts_per_cell <- as.data.frame(colSums(counts))
+counts_per_gene <- as.data.frame(rowSums(counts))
+genes_per_cell <- as.data.frame(colSums(counts>0))
+cells_per_gene <- as.data.frame(rowSums(counts>0) )
+
+colnames(counts_per_cell) <- "counts"
+colnames(counts_per_gene) <- "counts"
+colnames(genes_per_cell) <- "genes_per_cell"
+colnames(cells_per_gene) <- "cells_per_gene"
+
+df <- cbind(counts_per_cell, genes_per_cell)
+
+ggplot(df, aes(x=counts, y=genes_per_cell)) + geom_point(color="gray30") + scale_y_continuous(trans='log10') + scale_x_continuous(trans='log10') + theme_light()
+
+#Plot cells ranked by their number of detected genes.
+genes_per_cell$cells <- rownames(genes_per_cell)
+
+#set upper and lower thresholds for genes per cell - the upper and lower limit curve bends give a good clue on what thresholds to set:
+min_genes_per_cell <- 200
+max_genes_per_cell <- 4000
+
+ggplot(genes_per_cell, aes(x=reorder(genes_per_cell, cells), y=genes_per_cell)) + geom_point() +
+  scale_y_continuous(trans='log10', breaks=seq(0, 5000, by = 1000)) + ggtitle("Genes per Cell") + theme_test(base_size = 12) +
+  geom_hline(aes(yintercept=min_genes_per_cell),
+             color="blue", linetype="dashed", size=0.5) +
+  geom_hline(aes(yintercept=max_genes_per_cell), color="blue", linetype="dashed", size=0.5) + labs(x= "Cells", y="Number of Genes") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+```
+
+### Percent MT Distribution
+```{r fig.width=12, fig.height=6}
+#Density plot
+ggplot(HC12@meta.data, aes(x=HC12@meta.data$percent.mt)) +
+  geom_density() + scale_color_manual(values=c("blue")) + theme_classic() +
+  geom_vline(aes(xintercept=mean(HC12@meta.data$percent.mt)),
+             color="blue", linetype="dashed", size=0.5) +scale_x_continuous(breaks=seq(0, 40, by = 1))
+```
+
+### Data Filtering
+```{r}
+(Count93_nCount_RNA <- quantile(HC12@meta.data$nCount_RNA, 0.93)) # calculate value in the 93rd percentile for a hint on thresholds but these should be taken with a grain of salt, look at the above plots as well to determine thresholds
+(Count93_nFeature_RNA <- quantile(HC12@meta.data$nFeature_RNA, 0.93))
+(Count93_percent_mt <-  quantile(HC12@meta.data$percent.mt, 0.93))
+
+summary(HC12@meta.data$nCount_RNA)
+summary(HC12@meta.data$nFeature_RNA)
+
+HC12 <- subset(HC12, subset = nFeature_RNA > 200 & nFeature_RNA < 4000 & percent.mt < 12)
+```
+
+### Data after filtering based on above thresholds
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC12, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC12, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC12, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC12)
+```
+
+## Doublet Removal
+Detection of doublets was conducted in python using [scrublet](https://github.com/swolock/scrublet) and a file containing scrublet calls/predictions was written out. This file was then loaded into R to use as a basis for filtering out doublets.
+
+Visualization of the doublet predictions in a 2-D embedding/UAMP: Predicted doublets should mostly co-localize (possibly in multiple clusters). If they do not, you may need to adjust the doublet score threshold, or change the pre-processing parameters to better resolve the cell states present in your data.
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC12/HC12_doublet_predictions.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+The simulated doublet histogram below should typically be bimodal. The left mode corresponds to "embedded" doublets generated by two cells with similar gene expression. The right mode corresponds to "neotypic" doublets, which are generated by cells with distinct gene expression (e.g., different cell types) and are expected to introduce more artifacts in downstream analyses. Scrublet can only detect neotypic doublets.
+This histogram is an important diagnostic plot. Doublet score threshold should separate the two shoulders of the bimodal distribution as shown below:
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC12/HC12_doublet_predictions_histogram.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+```{r out.height = "460px", out.width='800px', echo=F, eval=FALSE}
+knitr::include_graphics('/scrublet_predictions/HC12/HC12_doublet_predictions_histogram.pdf')
+```
+
+```{r}
+#Loading scrublet predictions
+dim(scrublet_calls <- read.csv("/scrublet_predictions/HC12/HC12_scrublet_calls.csv"))
+table(scrublet_calls$predicted_doublets)
+
+scrublet_calls$X <- paste0("Mid_Secretory_HC12_", scrublet_calls$X)
+
+dim(scrublet_calls <- scrublet_calls[which(scrublet_calls$X %in% rownames(HC12@meta.data)),])
+rownames(scrublet_calls) <- scrublet_calls$X
+scrublet_calls$X <-NULL
+dim(scrublet_calls)
+
+#Adding doublet information to metadata
+#First we'll ensure that the rownames in HC12 match the rownames in scrublet_calls. AddMetaData maps rownames but we'll still do so to ensure that mapping of predictions are made to respective bar codes
+scrublet_calls <- scrublet_calls[rownames(HC12@meta.data), ]
+head(rownames(scrublet_calls))
+head(rownames(HC12@meta.data))
+HC12 <- AddMetaData(HC12, scrublet_calls)
+```
+
+```{r, fig.height=4, fig.width=5}
+#Without normalizing the data, we want to first visualize the doublets in our datasets
+HC12_Control_2 <- HC12
+HC12_Control_2 <- FindVariableFeatures(HC12_Control_2, selection.method = "vst", nfeatures = 2500)
+HC12_Control_2 <- ScaleData(object = HC12_Control_2, scale.max = 30,  verbose = FALSE)
+HC12_Control_2 <- RunPCA(object = HC12_Control_2, npcs = 30, verbose = FALSE)
+HC12_Control_2 <- FindNeighbors(HC12_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC12_Control_2 <- RunUMAP(HC12_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC12_Control_2 <- FindClusters(HC12_Control_2, verbose = TRUE, reduction = "pca") #Resolution can be adjusted - leaving to default for now in test dataset
+
+FeaturePlot(HC12_Control_2, features = "doublet_scores", pt.size = 0.01)
+
+DimPlot(HC12_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"))
+
+#Checking the nUMI for doublets and singlets
+VlnPlot(HC12_Control_2,
+        features = "nCount_RNA",
+        pt.size = 0,
+        group.by = "predicted_doublets") + NoLegend()
+
+#Fractions of doublets per cluster
+df <- data.table(HC12_Control_2@meta.data)
+
+perc <- as.data.frame(df %>%
+                        group_by(seurat_clusters, predicted_doublets) %>%
+                        dplyr::summarise(cnt = n()) %>%
+                        mutate(freq = formattable::percent(cnt / sum(cnt), digits = 5)))
+
+perc$predicted_doublets <- as.character(perc$predicted_doublets)
+perc$predicted_doublets[perc$predicted_doublets == "True"] <- "Doublet"
+perc$predicted_doublets[perc$predicted_doublets == "False"] <- "Singlet"
+```
+
+```{r, fig.height=3.5, fig.width=7}
+perc %>%
+  ggplot() +
+  geom_bar(aes(x = seurat_clusters, y=freq,
+               group = predicted_doublets,
+               fill = predicted_doublets),
+           stat = "identity", width = 0.99, alpha = 0.9) +
+  theme_test()+
+  labs(y=paste0("% Distribution of doublets and singlets per cluster"), x="") +
+  scale_fill_manual(values = c("Doublet" = 'firebrick4', "Singlet" = "dodgerblue4")) +
+  theme(legend.position = "right") +scale_y_continuous(expand = c(0,0))
+```
+
+```{r, fig.height=4, fig.width=5}
+#Next we'll remove the doublets and see what the data looks like
+HC12_Control_2 <- HC12_Control_2[, HC12_Control_2@meta.data[, "predicted_doublets"] == "False"]
+unique(HC12_Control_2@meta.data$predicted_doublets)
+DimPlot(HC12_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"), label = TRUE)
+```
+
+**Filtering cells to remove doublets**
+```{r}
+HC12 <- HC12[, HC12@meta.data[, "predicted_doublets"] == "False"]
+unique(HC12@meta.data$predicted_doublets)
+dim(HC12)
+```
+
+### Data after filtering doublets
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC12, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC12, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC12, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC12)
+```
+
+### Saving object for further downstream analysis
+```{r}
+saveRDS(HC12, file = "/QC/HC12_SeuratObject_soupX_doublet_QC_filtered.rds")
+rm(HC12)
+gc()
+```
+
+## HC18 QC
+```{r,fig.height=7, fig.width=13}
+#We'll store the percentage of reads that map to the mitochondrial genome in the metadata object as "percent.mt"
+HC18[["percent.mt"]] <- PercentageFeatureSet(HC18, pattern = "^MT-")
+
+#The number of unique genes and total molecules are automatically calculated during `CreateSeuratObject()` and we can find these stored in the object meta data as nFeature_RNA and nCount_RNA respecitvely.
+HC18@meta.data %>%
+  head(n=5)
+```
+
+**Visualize QC metrics, and use these to filter cells**
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC18, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC18, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC18, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+```
+
+```{r, message=FALSE, fig.width=20, fig.height=7}
+#FeatureScatter is typically used to visualize feature-feature relationships, but can be used for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+plot1 <- FeatureScatter(HC18, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "gray60")
+plot2 <- FeatureScatter(HC18, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", cols = "gray60")
+plot1 + plot2
+```
+
+**Alternative view of the data and distributions**
+```{r, fig.height=3}
+df <- as.data.table(HC18@meta.data)
+sel <- c("orig.ident", "nCount_RNA", "nFeature_RNA", "percent.mt")
+df <- df[, sel, with = FALSE]
+df[1:3, ]
+fontsize <- 10
+linesize <- 0.35
+
+gp.ls <- df[, 2:4] %>% imap( ~ {
+
+  # define lable function
+  give.n <- function(x) {
+    return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
+  }
+
+  # assign colors
+  col.ls <-
+    setNames(
+      c('gray50', 'gray70', 'gray90', "gray" ),
+      c("nCount_RNA", "nFeature_RNA", "percent.mt", "log10GenesPerUMI")
+    )
+
+  ggplot(data = df, aes(x = orig.ident, y = .x)) +
+    geom_violin(trim = FALSE, fill = col.ls[.y]) +
+    ggtitle(label = .y) + ylab(label = .y) +
+    theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      panel.border = element_blank()
+    ) +
+    theme(
+      axis.text = element_text(size = fontsize),
+      axis.line = element_line(colour = "black", size = linesize),
+      axis.ticks = element_line(size = linesize),
+      axis.title.x = element_blank(),
+      axis.ticks.length = unit(.05, "cm"),
+      plot.title = element_text(size = fontsize + 2, hjust = 0.5),
+      legend.position = 'none'
+    ) +
+    stat_summary(fun = median, geom = "point", col = "black") +  
+    stat_summary(fun.data = give.n,
+                 geom = "text",
+                 col = "black") + theme_light()
+})
+
+grid.arrange(gp.ls[[1]], gp.ls[[2]], gp.ls[[3]], ncol = 3)
+```
+
+### Number of cell counts per sample before filtering
+```{r, fig.height=4, fig.width=2}
+metadata <- HC18@meta.data
+# Add cell IDs to metadata
+metadata$cells <- rownames(metadata)
+
+# Rename columns
+metadata <- metadata %>%
+  dplyr::rename(nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+unique(metadata$orig.ident)
+# Visualize the number of cell counts per sample
+metadata %>%
+  ggplot(aes(x=orig.ident, fill=orig.ident)) +
+  geom_bar(color = "gray80", fill = "gray80") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells") + theme(legend.position = "none") +
+  theme(legend.position = "none") +
+  geom_text(stat='count', aes(label=..count..), vjust = 0.5)
+```
+
+### Number UMIs/transcripts per cell
+```{r, fig.width=4, fig.height=3}
+#Visualize the number UMIs/transcripts per cell
+ggplot(metadata, aes(x = nUMI)) +
+  geom_histogram(aes(y = ..density..),
+                 alpha = 0.3, color="gray50", fill="white") +
+  scale_x_log10() +
+  theme_classic() +
+  ylab("Cell density/UMI counts per cell") +
+  geom_vline(xintercept = 500) + theme(legend.position = "none")+
+  geom_density(lwd = 0.5, colour = 4,
+               fill = 4, alpha = 0.1)
+#The UMI counts per cell should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply
+```
+
+### More on Data and QC
+```{r, message=FALSE, warning=FALSE, fig.height=4, fig.width=6}
+counts <- Matrix(HC18@assays$RNA@counts)
+counts_per_cell <- Matrix::colSums(counts)
+counts_per_gene <- Matrix::rowSums(counts)
+genes_per_cell1 <- Matrix::colSums(counts>0) #count a gene only if it has non-zero reads mapped.
+cells_per_gene <- Matrix::rowSums(counts>0) #only count cells where the gene is expressed
+
+counts_per_cell <- as.data.frame(colSums(counts))
+counts_per_gene <- as.data.frame(rowSums(counts))
+genes_per_cell <- as.data.frame(colSums(counts>0))
+cells_per_gene <- as.data.frame(rowSums(counts>0) )
+
+colnames(counts_per_cell) <- "counts"
+colnames(counts_per_gene) <- "counts"
+colnames(genes_per_cell) <- "genes_per_cell"
+colnames(cells_per_gene) <- "cells_per_gene"
+
+df <- cbind(counts_per_cell, genes_per_cell)
+
+ggplot(df, aes(x=counts, y=genes_per_cell)) + geom_point(color="gray30") + scale_y_continuous(trans='log10') + scale_x_continuous(trans='log10') + theme_light()
+
+#Plot cells ranked by their number of detected genes.
+genes_per_cell$cells <- rownames(genes_per_cell)
+
+#set upper and lower thresholds for genes per cell - the upper and lower limit curve bends give a good clue on what thresholds to set:
+min_genes_per_cell <- 200
+max_genes_per_cell <- 3500
+
+ggplot(genes_per_cell, aes(x=reorder(genes_per_cell, cells), y=genes_per_cell)) + geom_point() +
+  scale_y_continuous(trans='log10', breaks=seq(0, 5000, by = 1000)) + ggtitle("Genes per Cell") + theme_test(base_size = 12) +
+  geom_hline(aes(yintercept=min_genes_per_cell),
+             color="blue", linetype="dashed", size=0.5) +
+  geom_hline(aes(yintercept=max_genes_per_cell), color="blue", linetype="dashed", size=0.5) + labs(x= "Cells", y="Number of Genes") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+```
+
+### Percent MT Distribution
+```{r fig.width=12, fig.height=6}
+#Density plot
+ggplot(HC18@meta.data, aes(x=HC18@meta.data$percent.mt)) +
+  geom_density() + scale_color_manual(values=c("blue")) + theme_classic() +
+  geom_vline(aes(xintercept=mean(HC18@meta.data$percent.mt)),
+             color="blue", linetype="dashed", size=0.5) +scale_x_continuous(breaks=seq(0, 40, by = 1))
+```
+
+### Data Filtering
+```{r}
+(Count93_nCount_RNA <- quantile(HC18@meta.data$nCount_RNA, 0.93)) # calculate value in the 93rd percentile for a hint on thresholds but these should be taken with a grain of salt, look at the above plots as well to determine thresholds
+(Count93_nFeature_RNA <- quantile(HC18@meta.data$nFeature_RNA, 0.93))
+(Count93_percent_mt <-  quantile(HC18@meta.data$percent.mt, 0.93))
+
+summary(HC18@meta.data$nCount_RNA)
+summary(HC18@meta.data$nFeature_RNA)
+
+HC18 <- subset(HC18, subset = nFeature_RNA > 200 & nFeature_RNA < 3000 & percent.mt < 14)
+```
+
+### Data after filtering based on above thresholds
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC18, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC18, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC18, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC18)
+```
+
+## Doublet Removal
+Detection of doublets was conducted in python using [scrublet](https://github.com/swolock/scrublet) and a file containing scrublet calls/predictions was written out. This file was then loaded into R to use as a basis for filtering out doublets.
+
+Visualization of the doublet predictions in a 2-D embedding/UAMP: Predicted doublets should mostly co-localize (possibly in multiple clusters). If they do not, you may need to adjust the doublet score threshold, or change the pre-processing parameters to better resolve the cell states present in your data.
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC18/HC18_doublet_predictions.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+The simulated doublet histogram below should typically be bimodal. The left mode corresponds to "embedded" doublets generated by two cells with similar gene expression. The right mode corresponds to "neotypic" doublets, which are generated by cells with distinct gene expression (e.g., different cell types) and are expected to introduce more artifacts in downstream analyses. Scrublet can only detect neotypic doublets.
+This histogram is an important diagnostic plot. Doublet score threshold should separate the two shoulders of the bimodal distribution as shown below:
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC18/HC18_doublet_predictions_histogram.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+```{r out.height = "460px", out.width='800px', echo=F, eval=FALSE}
+knitr::include_graphics('/scrublet_predictions/HC18/HC18_doublet_predictions_histogram.pdf')
+```
+
+```{r}
+#Loading scrublet predictions
+dim(scrublet_calls <- read.csv("/scrublet_predictions/HC18/HC18_scrublet_calls.csv"))
+table(scrublet_calls$predicted_doublets)
+
+scrublet_calls$X <- paste0("Early_Secretory_HC18_", scrublet_calls$X)
+
+dim(scrublet_calls <- scrublet_calls[which(scrublet_calls$X %in% rownames(HC18@meta.data)),])
+rownames(scrublet_calls) <- scrublet_calls$X
+scrublet_calls$X <-NULL
+dim(scrublet_calls)
+
+#Adding doublet information to metadata
+#First we'll ensure that the rownames in HC18 match the rownames in scrublet_calls. AddMetaData maps rownames but we'll still do so to ensure that mapping of predictions are made to respective bar codes
+scrublet_calls <- scrublet_calls[rownames(HC18@meta.data), ]
+head(rownames(scrublet_calls))
+head(rownames(HC18@meta.data))
+HC18 <- AddMetaData(HC18, scrublet_calls)
+```
+
+```{r, fig.height=4, fig.width=5}
+#Without normalizing the data, we want to first visualize the doublets in our datasets
+HC18_Control_2 <- HC18
+HC18_Control_2 <- FindVariableFeatures(HC18_Control_2, selection.method = "vst", nfeatures = 2500)
+HC18_Control_2 <- ScaleData(object = HC18_Control_2, scale.max = 30,  verbose = FALSE)
+HC18_Control_2 <- RunPCA(object = HC18_Control_2, npcs = 30, verbose = FALSE)
+HC18_Control_2 <- FindNeighbors(HC18_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC18_Control_2 <- RunUMAP(HC18_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC18_Control_2 <- FindClusters(HC18_Control_2, verbose = TRUE, reduction = "pca") #Resolution can be adjusted - leaving to default for now in test dataset
+
+FeaturePlot(HC18_Control_2, features = "doublet_scores", pt.size = 0.01)
+
+DimPlot(HC18_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"))
+
+#Checking the nUMI for doublets and singlets
+VlnPlot(HC18_Control_2,
+        features = "nCount_RNA",
+        pt.size = 0,
+        group.by = "predicted_doublets") + NoLegend()
+
+#Fractions of doublets per cluster
+df <- data.table(HC18_Control_2@meta.data)
+
+perc <- as.data.frame(df %>%
+                        group_by(seurat_clusters, predicted_doublets) %>%
+                        dplyr::summarise(cnt = n()) %>%
+                        mutate(freq = formattable::percent(cnt / sum(cnt), digits = 5)))
+
+perc$predicted_doublets <- as.character(perc$predicted_doublets)
+perc$predicted_doublets[perc$predicted_doublets == "True"] <- "Doublet"
+perc$predicted_doublets[perc$predicted_doublets == "False"] <- "Singlet"
+```
+
+```{r, fig.height=3.5, fig.width=7}
+perc %>%
+  ggplot() +
+  geom_bar(aes(x = seurat_clusters, y=freq,
+               group = predicted_doublets,
+               fill = predicted_doublets),
+           stat = "identity", width = 0.99, alpha = 0.9) +
+  theme_test()+
+  labs(y=paste0("% Distribution of doublets and singlets per cluster"), x="") +
+  scale_fill_manual(values = c("Doublet" = 'firebrick4', "Singlet" = "dodgerblue4")) +
+  theme(legend.position = "right") +scale_y_continuous(expand = c(0,0))
+```
+
+```{r, fig.height=4, fig.width=5}
+#Next we'll remove the doublets and see what the data looks like
+HC18_Control_2 <- HC18_Control_2[, HC18_Control_2@meta.data[, "predicted_doublets"] == "False"]
+unique(HC18_Control_2@meta.data$predicted_doublets)
+DimPlot(HC18_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"), label = TRUE)
+```
+
+**Filtering cells to remove doublets**
+```{r}
+HC18 <- HC18[, HC18@meta.data[, "predicted_doublets"] == "False"]
+unique(HC18@meta.data$predicted_doublets)
+dim(HC18)
+```
+
+### Data after filtering doublets
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC18, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC18, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC18, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC18)
+```
+
+### Saving object for further downstream analysis
+```{r}
+saveRDS(HC18, file = "/QC/HC18_SeuratObject_soupX_doublet_QC_filtered.rds")
+rm(HC18)
+gc()
+```
+
+## HC19 QC
+```{r,fig.height=7, fig.width=13}
+#We'll store the percentage of reads that map to the mitochondrial genome in the metadata object as "percent.mt"
+HC19[["percent.mt"]] <- PercentageFeatureSet(HC19, pattern = "^MT-")
+
+#The number of unique genes and total molecules are automatically calculated during `CreateSeuratObject()` and we can find these stored in the object meta data as nFeature_RNA and nCount_RNA respecitvely.
+HC19@meta.data %>%
+  head(n=5)
+```
+
+**Visualize QC metrics, and use these to filter cells**
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC19, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC19, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC19, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+```
+
+
+```{r, message=FALSE, fig.width=20, fig.height=7}
+#FeatureScatter is typically used to visualize feature-feature relationships, but can be used for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+plot1 <- FeatureScatter(HC19, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "gray60")
+plot2 <- FeatureScatter(HC19, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", cols = "gray60")
+plot1 + plot2
+```
+
+**Alternative view of the data and distributions**
+```{r, fig.height=3}
+df <- as.data.table(HC19@meta.data)
+sel <- c("orig.ident", "nCount_RNA", "nFeature_RNA", "percent.mt")
+df <- df[, sel, with = FALSE]
+df[1:3, ]
+fontsize <- 10
+linesize <- 0.35
+
+gp.ls <- df[, 2:4] %>% imap( ~ {
+
+  # define lable function
+  give.n <- function(x) {
+    return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
+  }
+
+  # assign colors
+  col.ls <-
+    setNames(
+      c('gray50', 'gray70', 'gray90', "gray" ),
+      c("nCount_RNA", "nFeature_RNA", "percent.mt", "log10GenesPerUMI")
+    )
+
+  ggplot(data = df, aes(x = orig.ident, y = .x)) +
+    geom_violin(trim = FALSE, fill = col.ls[.y]) +
+    ggtitle(label = .y) + ylab(label = .y) +
+    theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      panel.border = element_blank()
+    ) +
+    theme(
+      axis.text = element_text(size = fontsize),
+      axis.line = element_line(colour = "black", size = linesize),
+      axis.ticks = element_line(size = linesize),
+      axis.title.x = element_blank(),
+      axis.ticks.length = unit(.05, "cm"),
+      plot.title = element_text(size = fontsize + 2, hjust = 0.5),
+      legend.position = 'none'
+    ) +
+    stat_summary(fun = median, geom = "point", col = "black") +  
+    stat_summary(fun.data = give.n,
+                 geom = "text",
+                 col = "black") + theme_light()
+})
+
+grid.arrange(gp.ls[[1]], gp.ls[[2]], gp.ls[[3]], ncol = 3)
+```
+
+### Number of cell counts per sample before filtering
+```{r, fig.height=4, fig.width=2}
+metadata <- HC19@meta.data
+# Add cell IDs to metadata
+metadata$cells <- rownames(metadata)
+
+# Rename columns
+metadata <- metadata %>%
+  dplyr::rename(nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+unique(metadata$orig.ident)
+# Visualize the number of cell counts per sample
+metadata %>%
+  ggplot(aes(x=orig.ident, fill=orig.ident)) +
+  geom_bar(color = "gray80", fill = "gray80") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells") + theme(legend.position = "none") +
+  theme(legend.position = "none") +
+  geom_text(stat='count', aes(label=..count..), vjust = 0.5)
+```
+
+### Number UMIs/transcripts per cell
+```{r, fig.width=4, fig.height=3}
+#Visualize the number UMIs/transcripts per cell
+ggplot(metadata, aes(x = nUMI)) +
+  geom_histogram(aes(y = ..density..),
+                 alpha = 0.3, color="gray50", fill="white") +
+  scale_x_log10() +
+  theme_classic() +
+  ylab("Cell density/UMI counts per cell") +
+  geom_vline(xintercept = 500) + theme(legend.position = "none")+
+  geom_density(lwd = 0.5, colour = 4,
+               fill = 4, alpha = 0.1)
+#The UMI counts per cell should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply
+```
+
+### More on Data and QC
+```{r, message=FALSE, warning=FALSE, fig.height=4, fig.width=6}
+counts <- Matrix(HC19@assays$RNA@counts)
+counts_per_cell <- Matrix::colSums(counts)
+counts_per_gene <- Matrix::rowSums(counts)
+genes_per_cell1 <- Matrix::colSums(counts>0) #count a gene only if it has non-zero reads mapped.
+cells_per_gene <- Matrix::rowSums(counts>0) #only count cells where the gene is expressed
+
+counts_per_cell <- as.data.frame(colSums(counts))
+counts_per_gene <- as.data.frame(rowSums(counts))
+genes_per_cell <- as.data.frame(colSums(counts>0))
+cells_per_gene <- as.data.frame(rowSums(counts>0) )
+
+colnames(counts_per_cell) <- "counts"
+colnames(counts_per_gene) <- "counts"
+colnames(genes_per_cell) <- "genes_per_cell"
+colnames(cells_per_gene) <- "cells_per_gene"
+
+df <- cbind(counts_per_cell, genes_per_cell)
+
+ggplot(df, aes(x=counts, y=genes_per_cell)) + geom_point(color="gray30") + scale_y_continuous(trans='log10') + scale_x_continuous(trans='log10') + theme_light()
+
+#Plot cells ranked by their number of detected genes.
+genes_per_cell$cells <- rownames(genes_per_cell)
+
+#set upper and lower thresholds for genes per cell - the upper and lower limit curve bends give a good clue on what thresholds to set:
+min_genes_per_cell <- 200
+max_genes_per_cell <- 4000
+
+ggplot(genes_per_cell, aes(x=reorder(genes_per_cell, cells), y=genes_per_cell)) + geom_point() +
+  scale_y_continuous(trans='log10', breaks=seq(0, 5000, by = 1000)) + ggtitle("Genes per Cell") + theme_test(base_size = 12) +
+  geom_hline(aes(yintercept=min_genes_per_cell),
+             color="blue", linetype="dashed", size=0.5) +
+  geom_hline(aes(yintercept=max_genes_per_cell), color="blue", linetype="dashed", size=0.5) + labs(x= "Cells", y="Number of Genes") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+```
+
+### Percent MT Distribution
+```{r fig.width=12, fig.height=6}
+#Density plot
+ggplot(HC19@meta.data, aes(x=HC19@meta.data$percent.mt)) +
+  geom_density() + scale_color_manual(values=c("blue")) + theme_classic() +
+  geom_vline(aes(xintercept=mean(HC19@meta.data$percent.mt)),
+             color="blue", linetype="dashed", size=0.5) +scale_x_continuous(breaks=seq(0, 40, by = 1))
+```
+
+### Data Filtering
+```{r}
+(Count93_nCount_RNA <- quantile(HC19@meta.data$nCount_RNA, 0.93)) # calculate value in the 93rd percentile for a hint on thresholds but these should be taken with a grain of salt, look at the above plots as well to determine thresholds
+(Count93_nFeature_RNA <- quantile(HC19@meta.data$nFeature_RNA, 0.93))
+(Count93_percent_mt <-  quantile(HC19@meta.data$percent.mt, 0.93))
+
+summary(HC19@meta.data$nCount_RNA)
+summary(HC19@meta.data$nFeature_RNA)
+
+HC19 <- subset(HC19, subset = nFeature_RNA > 200 & nFeature_RNA < 3500 & percent.mt < 10)
+```
+
+### Data after filtering based on above thresholds
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC19, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC19, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC19, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC19)
+```
+
+## Doublet Removal
+Detection of doublets was conducted in python using [scrublet](https://github.com/swolock/scrublet) and a file containing scrublet calls/predictions was written out. This file was then loaded into R to use as a basis for filtering out doublets.
+
+Visualization of the doublet predictions in a 2-D embedding/UAMP: Predicted doublets should mostly co-localize (possibly in multiple clusters). If they do not, you may need to adjust the doublet score threshold, or change the pre-processing parameters to better resolve the cell states present in your data.
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC19/HC19_doublet_predictions.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+The simulated doublet histogram below should typically be bimodal. The left mode corresponds to "embedded" doublets generated by two cells with similar gene expression. The right mode corresponds to "neotypic" doublets, which are generated by cells with distinct gene expression (e.g., different cell types) and are expected to introduce more artifacts in downstream analyses. Scrublet can only detect neotypic doublets.
+This histogram is an important diagnostic plot. Doublet score threshold should separate the two shoulders of the bimodal distribution as shown below:
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC19/HC19_doublet_predictions_histogram.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+```{r out.height = "460px", out.width='800px', echo=F, eval=FALSE}
+knitr::include_graphics('/scrublet_predictions/HC19/HC19_doublet_predictions_histogram.pdf')
+```
+
+```{r}
+#Loading scrublet predictions
+dim(scrublet_calls <- read.csv("/scrublet_predictions/HC19/HC19_scrublet_calls.csv"))
+table(scrublet_calls$predicted_doublets)
+
+scrublet_calls$X <- paste0("Late_Secretory_HC19_", scrublet_calls$X)
+
+dim(scrublet_calls <- scrublet_calls[which(scrublet_calls$X %in% rownames(HC19@meta.data)),])
+rownames(scrublet_calls) <- scrublet_calls$X
+scrublet_calls$X <-NULL
+dim(scrublet_calls)
+
+#Adding doublet information to metadata
+#First we'll ensure that the rownames in HC19 match the rownames in scrublet_calls. AddMetaData maps rownames but we'll still do so to ensure that mapping of predictions are made to respective bar codes
+scrublet_calls <- scrublet_calls[rownames(HC19@meta.data), ]
+head(rownames(scrublet_calls))
+head(rownames(HC19@meta.data))
+HC19 <- AddMetaData(HC19, scrublet_calls)
+```
+
+
+```{r, fig.height=4, fig.width=5}
+#Without normalizing the data, we want to first visualize the doublets in our datasets
+HC19_Control_2 <- HC19
+HC19_Control_2 <- FindVariableFeatures(HC19_Control_2, selection.method = "vst", nfeatures = 2500)
+HC19_Control_2 <- ScaleData(object = HC19_Control_2, scale.max = 30,  verbose = FALSE)
+HC19_Control_2 <- RunPCA(object = HC19_Control_2, npcs = 30, verbose = FALSE)
+HC19_Control_2 <- FindNeighbors(HC19_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC19_Control_2 <- RunUMAP(HC19_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC19_Control_2 <- FindClusters(HC19_Control_2, verbose = TRUE, reduction = "pca") #Resolution can be adjusted - leaving to default for now in test dataset
+
+FeaturePlot(HC19_Control_2, features = "doublet_scores", pt.size = 0.01)
+
+DimPlot(HC19_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"))
+
+#Checking the nUMI for doublets and singlets
+VlnPlot(HC19_Control_2,
+        features = "nCount_RNA",
+        pt.size = 0,
+        group.by = "predicted_doublets") + NoLegend()
+
+#Fractions of doublets per cluster
+df <- data.table(HC19_Control_2@meta.data)
+
+perc <- as.data.frame(df %>%
+                        group_by(seurat_clusters, predicted_doublets) %>%
+                        dplyr::summarise(cnt = n()) %>%
+                        mutate(freq = formattable::percent(cnt / sum(cnt), digits = 5)))
+
+perc$predicted_doublets <- as.character(perc$predicted_doublets)
+perc$predicted_doublets[perc$predicted_doublets == "True"] <- "Doublet"
+perc$predicted_doublets[perc$predicted_doublets == "False"] <- "Singlet"
+```
+
+```{r, fig.height=3.5, fig.width=7}
+perc %>%
+  ggplot() +
+  geom_bar(aes(x = seurat_clusters, y=freq,
+               group = predicted_doublets,
+               fill = predicted_doublets),
+           stat = "identity", width = 0.99, alpha = 0.9) +
+  theme_test()+
+  labs(y=paste0("% Distribution of doublets and singlets per cluster"), x="") +
+  scale_fill_manual(values = c("Doublet" = 'firebrick4', "Singlet" = "dodgerblue4")) +
+  theme(legend.position = "right") +scale_y_continuous(expand = c(0,0))
+```
+
+```{r, fig.height=4, fig.width=5}
+#Next we'll remove the doublets and see what the data looks like
+HC19_Control_2 <- HC19_Control_2[, HC19_Control_2@meta.data[, "predicted_doublets"] == "False"]
+unique(HC19_Control_2@meta.data$predicted_doublets)
+DimPlot(HC19_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"), label = TRUE)
+```
+
+**Filtering cells to remove doublets**
+```{r}
+HC19 <- HC19[, HC19@meta.data[, "predicted_doublets"] == "False"]
+unique(HC19@meta.data$predicted_doublets)
+dim(HC19)
+```
+
+### Data after filtering doublets
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC19, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC19, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC19, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC19)
+```
+
+### Saving object for further downstream analysis
+```{r}
+saveRDS(HC19, file = "/QC/HC19_SeuratObject_soupX_doublet_QC_filtered.rds")
+rm(HC19)
+gc()
+```
+
+## HC20 QC
+```{r,fig.height=7, fig.width=13}
+#We'll store the percentage of reads that map to the mitochondrial genome in the metadata object as "percent.mt"
+HC20[["percent.mt"]] <- PercentageFeatureSet(HC20, pattern = "^MT-")
+
+#The number of unique genes and total molecules are automatically calculated during `CreateSeuratObject()` and we can find these stored in the object meta data as nFeature_RNA and nCount_RNA respecitvely.
+HC20@meta.data %>%
+  head(n=5)
+```
+
+**Visualize QC metrics, and use these to filter cells**
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC20, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC20, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC20, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+```
+
+```{r, message=FALSE, fig.width=20, fig.height=7}
+#FeatureScatter is typically used to visualize feature-feature relationships, but can be used for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+plot1 <- FeatureScatter(HC20, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "gray60")
+plot2 <- FeatureScatter(HC20, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", cols = "gray60")
+plot1 + plot2
+```
+
+**Alternative view of the data and distributions**
+```{r, fig.height=3}
+df <- as.data.table(HC20@meta.data)
+sel <- c("orig.ident", "nCount_RNA", "nFeature_RNA", "percent.mt")
+df <- df[, sel, with = FALSE]
+df[1:3, ]
+fontsize <- 10
+linesize <- 0.35
+
+gp.ls <- df[, 2:4] %>% imap( ~ {
+
+  # define lable function
+  give.n <- function(x) {
+    return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
+  }
+
+  # assign colors
+  col.ls <-
+    setNames(
+      c('gray50', 'gray70', 'gray90', "gray" ),
+      c("nCount_RNA", "nFeature_RNA", "percent.mt", "log10GenesPerUMI")
+    )
+
+  ggplot(data = df, aes(x = orig.ident, y = .x)) +
+    geom_violin(trim = FALSE, fill = col.ls[.y]) +
+    ggtitle(label = .y) + ylab(label = .y) +
+    theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      panel.border = element_blank()
+    ) +
+    theme(
+      axis.text = element_text(size = fontsize),
+      axis.line = element_line(colour = "black", size = linesize),
+      axis.ticks = element_line(size = linesize),
+      axis.title.x = element_blank(),
+      axis.ticks.length = unit(.05, "cm"),
+      plot.title = element_text(size = fontsize + 2, hjust = 0.5),
+      legend.position = 'none'
+    ) +
+    stat_summary(fun = median, geom = "point", col = "black") +  
+    stat_summary(fun.data = give.n,
+                 geom = "text",
+                 col = "black") + theme_light()
+})
+
+grid.arrange(gp.ls[[1]], gp.ls[[2]], gp.ls[[3]], ncol = 3)
+```
+
+### Number of cell counts per sample before filtering
+```{r, fig.height=4, fig.width=2}
+metadata <- HC20@meta.data
+# Add cell IDs to metadata
+metadata$cells <- rownames(metadata)
+
+# Rename columns
+metadata <- metadata %>%
+  dplyr::rename(nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+
+unique(metadata$orig.ident)
+# Visualize the number of cell counts per sample
+metadata %>%
+  ggplot(aes(x=orig.ident, fill=orig.ident)) +
+  geom_bar(color = "gray80", fill = "gray80") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells") + theme(legend.position = "none") +
+  theme(legend.position = "none") +
+  geom_text(stat='count', aes(label=..count..), vjust = 0.5)
+```
+
+### Number UMIs/transcripts per cell
+```{r, fig.width=4, fig.height=3}
+#Visualize the number UMIs/transcripts per cell
+ggplot(metadata, aes(x = nUMI)) +
+  geom_histogram(aes(y = ..density..),
+                 alpha = 0.3, color="gray50", fill="white") +
+  scale_x_log10() +
+  theme_classic() +
+  ylab("Cell density/UMI counts per cell") +
+  geom_vline(xintercept = 500) + theme(legend.position = "none")+
+  geom_density(lwd = 0.5, colour = 4,
+               fill = 4, alpha = 0.1)
+#The UMI counts per cell should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply
+```
+
+### More on Data and QC
+```{r, message=FALSE, warning=FALSE, fig.height=4, fig.width=6}
+counts <- Matrix(HC20@assays$RNA@counts)
+counts_per_cell <- Matrix::colSums(counts)
+counts_per_gene <- Matrix::rowSums(counts)
+genes_per_cell1 <- Matrix::colSums(counts>0) #count a gene only if it has non-zero reads mapped.
+cells_per_gene <- Matrix::rowSums(counts>0) #only count cells where the gene is expressed
+
+counts_per_cell <- as.data.frame(colSums(counts))
+counts_per_gene <- as.data.frame(rowSums(counts))
+genes_per_cell <- as.data.frame(colSums(counts>0))
+cells_per_gene <- as.data.frame(rowSums(counts>0) )
+
+colnames(counts_per_cell) <- "counts"
+colnames(counts_per_gene) <- "counts"
+colnames(genes_per_cell) <- "genes_per_cell"
+colnames(cells_per_gene) <- "cells_per_gene"
+
+df <- cbind(counts_per_cell, genes_per_cell)
+
+ggplot(df, aes(x=counts, y=genes_per_cell)) + geom_point(color="gray30") + scale_y_continuous(trans='log10') + scale_x_continuous(trans='log10') + theme_light()
+
+#Plot cells ranked by their number of detected genes.
+genes_per_cell$cells <- rownames(genes_per_cell)
+
+#set upper and lower thresholds for genes per cell - the upper and lower limit curve bends give a good clue on what thresholds to set:
+min_genes_per_cell <- 200
+max_genes_per_cell <- 3000
+
+ggplot(genes_per_cell, aes(x=reorder(genes_per_cell, cells), y=genes_per_cell)) + geom_point() +
+  scale_y_continuous(trans='log10', breaks=seq(0, 5000, by = 1000)) + ggtitle("Genes per Cell") + theme_test(base_size = 12) +
+  geom_hline(aes(yintercept=min_genes_per_cell),
+             color="blue", linetype="dashed", size=0.5) +
+  geom_hline(aes(yintercept=max_genes_per_cell), color="blue", linetype="dashed", size=0.5) + labs(x= "Cells", y="Number of Genes") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+```
+
+### Percent MT Distribution
+```{r fig.width=12, fig.height=6}
+#Density plot
+ggplot(HC20@meta.data, aes(x=HC20@meta.data$percent.mt)) +
+  geom_density() + scale_color_manual(values=c("blue")) + theme_classic() +
+  geom_vline(aes(xintercept=mean(HC20@meta.data$percent.mt)),
+             color="blue", linetype="dashed", size=0.5) +scale_x_continuous(breaks=seq(0, 40, by = 1))
+```
+
+### Data Filtering
+```{r}
+(Count93_nCount_RNA <- quantile(HC20@meta.data$nCount_RNA, 0.93)) # calculate value in the 93rd percentile for a hint on thresholds but these should be taken with a grain of salt, look at the above plots as well to determine thresholds
+(Count93_nFeature_RNA <- quantile(HC20@meta.data$nFeature_RNA, 0.93))
+(Count93_percent_mt <-  quantile(HC20@meta.data$percent.mt, 0.93))
+
+summary(HC20@meta.data$nCount_RNA)
+summary(HC20@meta.data$nFeature_RNA)
+
+HC20 <- subset(HC20, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 11)
+```
+
+### Data after filtering based on above thresholds
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC20, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC20, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC20, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC20)
+```
+
+## Doublet Removal
+Detection of doublets was conducted in python using [scrublet](https://github.com/swolock/scrublet) and a file containing scrublet calls/predictions was written out. This file was then loaded into R to use as a basis for filtering out doublets.
+
+Visualization of the doublet predictions in a 2-D embedding/UAMP: Predicted doublets should mostly co-localize (possibly in multiple clusters). If they do not, you may need to adjust the doublet score threshold, or change the pre-processing parameters to better resolve the cell states present in your data.
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC20/HC20_doublet_predictions.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+The simulated doublet histogram below should typically be bimodal. The left mode corresponds to "embedded" doublets generated by two cells with similar gene expression. The right mode corresponds to "neotypic" doublets, which are generated by cells with distinct gene expression (e.g., different cell types) and are expected to introduce more artifacts in downstream analyses. Scrublet can only detect neotypic doublets.
+This histogram is an important diagnostic plot. Doublet score threshold should separate the two shoulders of the bimodal distribution as shown below:
+
+```{r, out.width = '70%', include=TRUE, fig.align="center", fig.cap=c("scrublet_predictions")}
+include_graphics('/scrublet_predictions/HC20/HC20_doublet_predictions_histogram.pdf', auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE),
+                 error = getOption("knitr.graphics.error", TRUE), dpi = 300)
+```
+
+```{r out.height = "460px", out.width='800px', echo=F, eval=FALSE}
+knitr::include_graphics('/scrublet_predictions/HC20/HC20_doublet_predictions_histogram.pdf')
+```
+
+```{r}
+#Loading scrublet predictions
+dim(scrublet_calls <- read.csv("/scrublet_predictions/HC20/HC20_scrublet_calls.csv"))
+table(scrublet_calls$predicted_doublets)
+
+scrublet_calls$X <- paste0("Late_Secretory_HC20_", scrublet_calls$X)
+
+dim(scrublet_calls <- scrublet_calls[which(scrublet_calls$X %in% rownames(HC20@meta.data)),])
+rownames(scrublet_calls) <- scrublet_calls$X
+scrublet_calls$X <-NULL
+dim(scrublet_calls)
+
+#Adding doublet information to metadata
+#First we'll ensure that the rownames in HC20 match the rownames in scrublet_calls. AddMetaData maps rownames but we'll still do so to ensure that mapping of predictions are made to respective bar codes
+scrublet_calls <- scrublet_calls[rownames(HC20@meta.data), ]
+head(rownames(scrublet_calls))
+head(rownames(HC20@meta.data))
+HC20 <- AddMetaData(HC20, scrublet_calls)
+```
+
+```{r, fig.height=4, fig.width=5}
+#Without normalizing the data, we want to first visualize the doublets in our datasets
+HC20_Control_2 <- HC20
+HC20_Control_2 <- FindVariableFeatures(HC20_Control_2, selection.method = "vst", nfeatures = 2500)
+HC20_Control_2 <- ScaleData(object = HC20_Control_2, scale.max = 30,  verbose = FALSE)
+HC20_Control_2 <- RunPCA(object = HC20_Control_2, npcs = 30, verbose = FALSE)
+HC20_Control_2 <- FindNeighbors(HC20_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC20_Control_2 <- RunUMAP(HC20_Control_2, dims = 1:20, verbose = TRUE, reduction = "pca")
+HC20_Control_2 <- FindClusters(HC20_Control_2, verbose = TRUE, reduction = "pca") #Resolution can be adjusted - leaving to default for now in test dataset
+
+FeaturePlot(HC20_Control_2, features = "doublet_scores", pt.size = 0.01)
+
+DimPlot(HC20_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"))
+
+#Checking the nUMI for doublets and singlets
+VlnPlot(HC20_Control_2,
+        features = "nCount_RNA",
+        pt.size = 0,
+        group.by = "predicted_doublets") + NoLegend()
+
+#Fractions of doublets per cluster
+df <- data.table(HC20_Control_2@meta.data)
+
+perc <- as.data.frame(df %>%
+                        group_by(seurat_clusters, predicted_doublets) %>%
+                        dplyr::summarise(cnt = n()) %>%
+                        mutate(freq = formattable::percent(cnt / sum(cnt), digits = 5)))
+
+perc$predicted_doublets <- as.character(perc$predicted_doublets)
+perc$predicted_doublets[perc$predicted_doublets == "True"] <- "Doublet"
+perc$predicted_doublets[perc$predicted_doublets == "False"] <- "Singlet"
+```
+
+```{r, fig.height=3.5, fig.width=7}
+perc %>%
+  ggplot() +
+  geom_bar(aes(x = seurat_clusters, y=freq,
+               group = predicted_doublets,
+               fill = predicted_doublets),
+           stat = "identity", width = 0.99, alpha = 0.9) +
+  theme_test()+
+  labs(y=paste0("% Distribution of doublets and singlets per cluster"), x="") +
+  scale_fill_manual(values = c("Doublet" = 'firebrick4', "Singlet" = "dodgerblue4")) +
+  theme(legend.position = "right") +scale_y_continuous(expand = c(0,0))
+```
+
+```{r, fig.height=4, fig.width=5}
+#Next we'll remove the doublets and see what the data looks like
+HC20_Control_2 <- HC20_Control_2[, HC20_Control_2@meta.data[, "predicted_doublets"] == "False"]
+unique(HC20_Control_2@meta.data$predicted_doublets)
+DimPlot(HC20_Control_2, group.by = "predicted_doublets", pt.size = 0.01, cols = c("gray90", "firebrick3"), label = TRUE)
+```
+
+**Filtering cells to remove doublets**
+```{r}
+HC20 <- HC20[, HC20@meta.data[, "predicted_doublets"] == "False"]
+unique(HC20@meta.data$predicted_doublets)
+dim(HC20)
+```
+
+### Data after filtering doublets
+```{r, message=FALSE, fig.height=4}
+#Visualize QC metrics as violin plots
+p1 <- VlnPlot(HC20, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p2 <- VlnPlot(HC20, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+p3 <- VlnPlot(HC20, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+grid.arrange(p1, p2, p3, ncol=3)
+
+dim(HC20)
+```
+
+### Saving object for further downstream analysis
+```{r}
+saveRDS(HC20, file = "/QC/HC20_SeuratObject_soupX_doublet_QC_filtered.rds")
+rm(HC20)
+gc()
+```
+
+
+```{r}
+sessionInfo()
+```
+
+

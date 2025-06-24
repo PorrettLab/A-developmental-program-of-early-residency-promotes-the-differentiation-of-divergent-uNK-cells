@@ -1,0 +1,656 @@
+---
+title: "Uterine NK Manuscript - Integrating 6 Samples of Interest: HBx01, HBx10, HBx12, HBx18, HBx19, HBx20"
+subtitle: "Merging datasets using Harmony"
+author: "RA"
+output:
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    downcute_theme: "chaos"
+editor_options: 
+  chunk_output_type: console
+---
+
+### Overview
+
+From our first analysis of the 6 aggregated samples, we noticed HBx19 has more than 3fold as many cells compared to other samples. Herein we conduct a second analysis based on downsampling of HBx19 from 30029 cells to 10055
+
+Our overarching aim is to integrate HBx01, HBx10, HBx12, HBx18, HBx19 and HBx20 using Harmony (Integration on Sample and Sequencing Method):
+
+    - HBx01 - Early_Secretory, 5'
+    - HBx18 - Early_Secretory, 3'
+    - HBx10 - Mid_Secretory, 3'
+    - HBx12 - Mid_Secretory, 3'
+    - HBx19 - Late_Secretory, 3'
+    - HBx20 - Late_Secretory, 3'
+
+### Load Required Packages
+```{r}
+suppressPackageStartupMessages({
+library(Seurat)
+  library(ggplot2)
+  library(patchwork)
+  library(dplyr)
+  library(hdf5r)
+  library(ape)
+  library(Rfast2)
+  library(RColorBrewer)
+  library(viridis)
+  library(data.table)
+  library(tidyverse)
+  library(magrittr)
+  library(gridExtra)
+  library(cowplot)
+  library(Matrix)
+  library(reticulate)
+  library(WebGestaltR)
+  library(harmony)
+  library(purrr)
+  library(usefun)
+  library(formattable)
+  library(splitstackshape)
+  library(formatR)
+  library(venn)
+  library(VennDiagram)
+  library(Hmisc)
+  library(interp)
+  library(SoupX)
+  library(knitr)
+  library(pheatmap)
+  library(DropletUtils)
+  library(celldex)
+  library(scater)
+  library(SingleCellExperiment)
+  library(AnnotationDbi)
+  library(org.Hs.eg.db)
+  library(EnsDb.Hsapiens.v86)
+  library(SingleR)
+  library(dittoSeq)
+  library(tidyr)
+  library(ggrepel)
+})
+```
+
+```{r}
+setwd("/data/project/porrettlab/lab_members/rasiimwe/tRNK_6sample_aggregation/")
+```
+
+## Loading previously merged unnormalized samples/Seurat objects
+```{r}
+merged_object <- readRDS("merged_object.rds")
+```
+
+## Assessing cell distributions per sample
+```{r}
+head(merged_object@meta.data)
+merged_object@meta.data$barcode <- rownames(merged_object@meta.data)
+dist <- as.data.frame(merged_object@meta.data[, c('orig.ident', 'barcode')])
+
+unique(merged_object@meta.data$orig.ident)
+rownames(dist) <- NULL 
+dist <- cSplit(dist, "barcode", sep="_", direction="wide", type.convert = "character")
+dist$orig.ident <- paste0(dist$orig.ident , "_", dist$barcode_1, "_", dist$barcode_2)
+dist <- dist[,-c(2:4)]
+colnames(dist) <- c("Sample", "Barcode")
+
+dist_nCells <- as.data.frame(table(dist$Sample))
+colnames(dist_nCells) <- c("Sample", "nCells")
+
+ggplot(dist_nCells, aes(reorder(Sample, -nCells), y = nCells, fill = Sample)) +  
+  geom_bar(stat = "identity", alpha=0.8) + theme_cowplot()+
+  geom_text(aes(label = nCells), vjust = 0) + labs(x="", y="nCells") + scale_y_continuous(expand = c(0,0), limits = c(0, 35000)) +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5), legend.position = "none") + scale_fill_brewer(palette = "RdYlBu")
+
+dist_nCells$Sample <- as.character(dist_nCells$Sample)
+
+dist_nCells$Sample[dist_nCells$Sample == "HBx01_Early_Secretory"] <- "HC1"
+dist_nCells$Sample[dist_nCells$Sample == "HBx10_Mid_Secretory" ] <- "HC2"
+dist_nCells$Sample[dist_nCells$Sample == "HBx12_Mid_Secretory" ] <- "HC3"
+dist_nCells$Sample[dist_nCells$Sample == "HBx18_CD45_Early_Secretory"] <- "HC4"
+dist_nCells$Sample[dist_nCells$Sample == "HBx19_Late_Secretory"] <- "HC5"
+dist_nCells$Sample[dist_nCells$Sample == "HBx20_Late_Secretory" ] <- "HC6"
+
+ggplot(dist_nCells, aes(reorder(Sample, -nCells), y = nCells, fill = Sample)) +  
+  geom_bar(stat = "identity", alpha=0.8) + theme_cowplot()+
+  geom_text(aes(label = nCells), vjust = 0) + labs(x="", y="nCells") + scale_y_continuous(expand = c(0,0), limits = c(0, 35000)) +
+  theme(axis.text.x = element_text(angle = 0,hjust = 0.5,vjust = 0.5), legend.position = "none") + scale_fill_brewer(palette = "RdYlBu")
+
+
+# Mean
+(sum(dist_nCells$nCells) - 30029)/5 #6333.4
+ 
+quantile(dist_nCells$nCells)  # We shall downsample HBx19 to 10055 cells
+
+dist$counts <- dist$Sample
+dist$counts <- as.character(dist$counts)
+unique(dist$counts)
+dist$counts[dist$counts == "HBx01_Early_Secretory"] <- 3735
+dist$counts[dist$counts == "HBx10_Mid_Secretory" ] <- 8665
+dist$counts[dist$counts == "HBx12_Mid_Secretory" ] <- 3902
+dist$counts[dist$counts == "HBx18_CD45_Early_Secretory"] <- 10519
+dist$counts[dist$counts == "HBx19_Late_Secretory"] <- 30029
+dist$counts[dist$counts == "HBx20_Late_Secretory" ] <- 4846
+dist$counts <- as.numeric(dist$counts)
+
+
+dist$Sample[dist$Sample == "HBx01_Early_Secretory"] <- "HC1"
+dist$Sample[dist$Sample == "HBx10_Mid_Secretory" ] <- "HC2"
+dist$Sample[dist$Sample == "HBx12_Mid_Secretory" ] <- "HC3"
+dist$Sample[dist$Sample == "HBx18_CD45_Early_Secretory"] <- "HC4"
+dist$Sample[dist$Sample == "HBx19_Late_Secretory"] <- "HC5"
+dist$Sample[dist$Sample == "HBx20_Late_Secretory" ] <- "HC6"
+
+
+ggplot(dist, aes(counts, fill = Sample, colour = Sample)) +
+  geom_density(alpha = 0.2) + labs(x="nCells")+theme_cowplot()+
+  xlim(0, 40000) + theme(legend.title = element_blank()) + scale_y_continuous(expand=c(0,0)) #+ 
+ # scale_x_discrete(labels = c("HC1","HC2","HC3","HC4","HC5","HC6"))
+
+rm(list = ls()) # Clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+
+## Loading all datasets and labeling them by phase
+```{r, eval=FALSE}
+#Early Secretory
+#Loading HBx01
+HBx01 <- readRDS("input_datasets/HBx01_SeuratObject_soupX_doublet_QC_filtered.rds") 
+dim(HBx01)
+head(colnames(HBx01))
+DefaultAssay(HBx01) # Should be RNA (otherwise would have been SCT if normalized)
+HBx01 <- RenameCells(object = HBx01, add.cell.id = "Early_Secretory_HBx01")
+head(colnames(HBx01))
+
+
+# Loading HBx18
+HBx18 <- readRDS("input_datasets/HBx18_CD45_SeuratObject_soupX_doublet_QC_filtered.rds")
+dim(HBx18)
+DefaultAssay(HBx18) # Should be RNA (otherwise would have been SCT if normalized)
+head(colnames(HBx18))
+HBx18 <- RenameCells(object = HBx18, add.cell.id = "Early_Secretory_HBx18")
+head(colnames(HBx18))
+
+# Mid Secretory
+# Loading HBx10
+HBx10 <- readRDS("input_datasets/HBx10_SeuratObject_soupX_doublet_QC_filtered.rds") 
+HBx10@assays #RNA, ADT - Not normalized, shouldn't have the SCT assay
+DefaultAssay(HBx10) <- "RNA" 
+DefaultAssay(HBx10)
+dim(HBx10)
+unique(HBx10@meta.data$orig.ident)
+head(colnames(HBx10))
+HBx10 <- RenameCells(object = HBx10, add.cell.id = "Mid_Secretory_HBx10")
+head(colnames(HBx10))
+
+# Loading HBx12
+HBx12 <- readRDS("input_datasets/HBx12_SeuratObject_soupX_doublet_QC_filtered.rds")
+HBx12@assays # RNA, ADT - Not normalized, shouldn't have the SCT assay
+DefaultAssay(HBx12) <- "RNA"
+DefaultAssay(HBx12)
+dim(HBx12)
+unique(HBx12@meta.data$orig.ident)
+head(colnames(HBx12))
+HBx12 <- RenameCells(object = HBx12, add.cell.id = "Mid_Secretory_HBx12")
+head(colnames(HBx12))
+
+# Late Secretory
+# Loading HBx19
+HBx19 <- readRDS("input_datasets/HBx19_SeuratObject_soupX_doublet_QC_filtered.rds") 
+HBx19@assays # RNA, ADT - Not normalized, shouldn't have the SCT assay
+DefaultAssay(HBx19) <- "RNA" 
+DefaultAssay(HBx19)
+dim(HBx19)
+unique(HBx19@meta.data$orig.ident)
+head(colnames(HBx19))
+HBx19 <- RenameCells(object = HBx19, add.cell.id = "Late_Secretory_HBx19")
+head(colnames(HBx19))
+
+
+
+# Loading HBx20
+HBx20 <- readRDS("input_datasets/HBx20_SeuratObject_soupX_doublet_QC_filtered.rds")
+HBx20@assays #RNA, ADT - Not normalized, shouldn't have the SCT assay
+DefaultAssay(HBx20) <- "RNA"
+DefaultAssay(HBx20)
+dim(HBx20)
+unique(HBx20@meta.data$orig.ident)
+HBx20@meta.data$orig.ident <- "HBx20"
+head(colnames(HBx20))
+HBx20 <- RenameCells(object = HBx20, add.cell.id = "Late_Secretory_HBx20")
+head(colnames(HBx20))
+```
+
+## Downsampling HBx19 from 30029 to 10055 cells
+```{r, eval=FALSE}
+dim(HBx19)
+HBx19 <- HBx19[, sample(colnames(HBx19), size=10055, replace=F)]
+dim(HBx19)
+```
+
+```{r, eval=FALSE}
+#Sanity check that all default assays are RNA
+DefaultAssay(HBx01) #"RNA"
+DefaultAssay(HBx18) #"RNA"
+DefaultAssay(HBx10) #"RNA"
+DefaultAssay(HBx12) #"RNA"
+DefaultAssay(HBx19) #"RNA"
+DefaultAssay(HBx20) #"RNA"
+
+#Check that all IDs are tagged by phase
+head(colnames(HBx01)) #"Early_Secretory_HBx01_AAACCTGAGCTGTCTA-1" "Early_Secretory_HBx01_AAACCTGAGGTGATTA-1"
+head(colnames(HBx18)) #"Early_Secretory_HBx18_AAACCCAAGCCAACCC-1" "Early_Secretory_HBx18_AAACCCAAGCGGATCA-1"
+head(colnames(HBx10)) #"Mid_Secretory_HBx10_AAACCCACACTGGATT-1" "Mid_Secretory_HBx10_AAACCCACAGTCTACA-1"
+head(colnames(HBx12)) #"Mid_Secretory_HBx12_AAACCCATCATGTCAG-1" "Mid_Secretory_HBx12_AAACGAAAGTCGGGAT-1" 
+head(colnames(HBx19)) #"Late_Secretory_HBx19_AAACCCAAGAATTGCA-1" "Late_Secretory_HBx19_AAACCCAAGACTGAGC-1" 
+head(colnames(HBx20)) #"Late_Secretory_HBx20_AAACCCACAAGTCCAT-1" "Late_Secretory_HBx20_AAACCCAGTCTGTCCT-1"
+
+
+# Because some datasets one dataset is 5', we need to control for this as well
+# HBx01
+unique(HBx01@meta.data$orig.ident)
+unique(HBx01@meta.data$Sequencing) #already has variable of interest
+
+# HBx18
+unique(HBx18@meta.data$orig.ident)
+unique(HBx18@meta.data$Sequencing)#already has variable of interest
+
+# HBx10
+unique(HBx10@meta.data$orig.ident)
+unique(HBx10@meta.data$Sequencing)
+HBx10@meta.data$Sequencing <- "3'"
+unique(HBx10@meta.data$Sequencing)
+
+# HBx12
+unique(HBx12@meta.data$orig.ident)
+unique(HBx12@meta.data$Sequencing)
+HBx12@meta.data$Sequencing <- "3'"
+unique(HBx12@meta.data$Sequencing)
+
+#HBx19
+unique(HBx19@meta.data$orig.ident)
+unique(HBx19@meta.data$Sequencing)
+HBx19@meta.data$Sequencing <- "3'"
+unique(HBx19@meta.data$Sequencing)
+
+# HBx20
+unique(HBx20@meta.data$orig.ident)
+unique(HBx20@meta.data$Sequencing)
+HBx20@meta.data$Sequencing <- "3'"
+unique(HBx20@meta.data$Sequencing)
+
+# Adding phased to metadata as well
+# HBx01
+HBx01@meta.data$Phase <- "Early_Secretory"
+unique(HBx01@meta.data$Phase)
+
+
+# HBx18
+HBx18@meta.data$Phase <- "Early_Secretory"
+unique(HBx18@meta.data$Phase)
+
+# HBx10
+HBx10@meta.data$Phase <- "Mid_Secretory"
+unique(HBx10@meta.data$Phase)
+
+# HBx12
+HBx12@meta.data$Phase <- "Mid_Secretory"
+unique(HBx12@meta.data$Phase)
+
+# HBx19
+HBx19@meta.data$Phase <- "Late_Secretory"
+unique(HBx19@meta.data$Phase)
+
+# HBx20
+HBx20@meta.data$Phase <- "Late_Secretory"
+unique(HBx20@meta.data$Phase)
+```
+
+
+### Merge all unnormalized samples/Seurat objects
+```{r, eval=FALSE}
+merged_object <- merge(HBx01, y = c(HBx10, HBx12, HBx18, HBx19, HBx20), project = "Merged_Samples", merge.data = TRUE)
+dim(merged_object)
+saveRDS(merged_object, file="merged_object_HBx19_downsampled.rds")
+
+rm(list = ls()) # Clearing environment as we'll not be using the created objects downstream
+gc()
+```
+
+```{r, eval=FALSE}
+merged_object <- readRDS("merged_object_HBx19_downsampled.rds")
+
+# Validate variable pairings introduced
+unique(merged_object@meta.data[c("orig.ident", "Sequencing", "Phase")])
+
+unique(meta <- merged_object@meta.data)
+# Double checking QC before norm
+VlnPlot(
+  merged_object, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), 
+  pt.size = 0.1, ncol = 6) & 
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+```
+
+## Following Workflow 2 - Merge and Normalize Datasets Together: 
+We have also seen alternative methods where datasets are merged and normalized together before taking them through Harmony e.g. the workflow suggested by [these Sanger Institute researchers](https://www.singlecellcourse.org/scrna-seq-dataset-integration.html#harmony-3-10k-merged_object-cells-and-whole-blood-strt-seq). 
+
+A similar workflow is suggested by the broad institute here: https://portals.broadinstitute.org/harmony/SeuratV3.html
+
+In this workflow, we load data that has gone through QC but not normalized - basically the object taken through Harmony should have been run through all preprocessing steps through PCA as these pcs are required for Harmony
+
+### Normalize merged datasets - using Log Norm for this run
+```{r, eval=FALSE}
+dim(merged_object) #41722 cells
+merged_object <- SCTransform(merged_object, vars.to.regress = "percent.mt", verbose = FALSE, return.only.var.genes = FALSE) 
+saveRDS(merged_object, file="merged_object_afterSCT.rds")
+```
+
+
+```{r}
+merged_object <- readRDS("merged_object_afterSCT.rds")
+
+merged_object <- RunPCA(merged_object, features = VariableFeatures(object = merged_object))
+
+print(merged_object[["pca"]], dims = 1:5, nfeatures = 5)
+VizDimLoadings(merged_object, dims = 1:2, reduction = "pca")
+DimPlot(merged_object, reduction = "pca")
+DimHeatmap(merged_object, dims = 1, cells = 500, balanced = TRUE)
+```
+
+```{r, fig.height=20, fig.width=20}
+DimHeatmap(merged_object, dims = 1:24, cells = 500, balanced = TRUE)
+```
+
+```{r,fig.height=5, fig.width=6}
+ElbowPlot(merged_object)
+```
+
+
+```{r}
+merged_object <- FindNeighbors(merged_object, dims = 1:30)
+merged_object <- FindClusters(merged_object, resolution = 0.8)
+merged_object <- RunUMAP(merged_object, dims = 1:30)
+```
+
+
+### Data before integration
+```{r, fig.width=12, fig.height=5}
+# Let's look at the merged object before running harmony
+p1 <- DimPlot(object = merged_object, reduction = "pca", pt.size = 0.1, group.by = "orig.ident") + ggtitle("Samples - Before Harmony")
+p2 <- VlnPlot(object = merged_object, features = "PC_1", group.by = "orig.ident",  pt.size = 0.1)
+p1+p2
+
+p1 <- DimPlot(object = merged_object, reduction = "pca", pt.size = 0.1, group.by = "Sequencing") + ggtitle("Sequencing - Before Harmony")
+p2 <- VlnPlot(object = merged_object, features = "PC_1", group.by = "Sequencing",  pt.size = 0.1)
+p1+p2
+```
+
+```{r, fig.width=12, fig.height=5}
+p1 <- DimPlot(merged_object, reduction = "umap", group.by = "orig.ident") + ggtitle("Samples - Before Harmony")
+p2 <- DimPlot(merged_object, reduction = "umap", group.by = "Sequencing") + ggtitle("Sequencing - Before Harmony")
+p1+p2
+```
+There is a clear difference between the datasets in the uncorrected PCs
+
+### Run Harmony
+We run Harmony by passing the Seurat object and specifying which variable(s) to integrate on. RunHarmony() returns a Seurat object, updated with the corrected Harmony coordinates. Let's set plot_convergence to TRUE, so we can make sure that the Harmony objective function gets better with each round.
+```{r, warning=FALSE, fig.height=4, fig.width=6}
+#Run harmony - specify variables to integrate on. In this case we are integrating on "orig.ident" which uniquely identifies each sample and 3' vs 5'
+harmonized_object <- RunHarmony(merged_object, 
+				group.by.vars = c("orig.ident", "Sequencing"), #we don't want to remove phase variations 
+reduction = "pca", 
+assay.use = "RNA", 
+reduction.save = "harmony", plot_convergence = TRUE) 
+```
+
+To directly access the new Harmony embeddings, use the "Embeddings" function.
+```{r, fig.height=4, fig.width=5}
+harmony_embeddings <- Embeddings(harmonized_object, 'harmony')
+harmony_embeddings[1:5, 1:5]
+```
+
+### Determine number of principal components
+Note that from this point onward, we should be using pcs corrected by Harmony
+```{r}
+# Determine percent of variation associated with each PC
+pct <- harmonized_object[["harmony"]]@stdev / sum(harmonized_object[["harmony"]]@stdev) * 100
+
+# Calculate cumulative percents for each PC
+cumulative_percentage <- cumsum(pct)
+
+# Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+pcs.perc <- which(cumulative_percentage > 90 & pct < 5)[1]
+pcs.perc
+
+# Determine the difference between variation of PC and subsequent PC
+var.pcs <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = T)[1] + 1
+
+#last point where change of % of variation is more than 0.1%.
+var.pcs
+
+# Minimum of the two calculation
+pcs <- min(pcs.perc, var.pcs)
+pcs
+```
+
+```{r, fig.height=6, fig.width=15}
+# Create a dataframe with values
+plot_df <- data.frame(pct = pct, 
+                      cumulative_percentage = cumulative_percentage, 
+                      rank = 1:length(pct))
+
+# Elbow plot to visualize 
+ggplot(plot_df, aes(cumulative_percentage, pct, label = rank, color = rank > pcs)) + 
+  geom_text() + 
+  geom_vline(xintercept = 90, color = "blue", linetype="dashed", size=0.5) + 
+  geom_hline(yintercept = min(pct[pct > 5]), color = "blue", linetype="dashed", size=0.5) +
+  theme_light() + scale_colour_discrete(l = 40)
+```
+
+## Validating with Elbow
+```{r}
+ElbowPlot(harmonized_object, reduction = "harmony", ndims = 50)
+```
+
+### Cell clustering
+Many downstream analyses are performed on low dimensional embeddings, not gene expression. To use the corrected Harmony embeddings rather than PCs, **set reduction = 'harmony'**. 
+
+```{r}
+harmonized_object <- harmonized_object %>% 
+  RunUMAP(reduction = "harmony", dims = 1:20, verbose = F)
+harmonized_object <-  FindNeighbors(harmonized_object, reduction = "harmony", dims = 1:20) #taking 20 - most clear difference in variation/elbow - but could increase dim if we are interested in subtle differences between clusters - SCT - more dims
+harmonized_object <-  FindClusters(harmonized_object) %>% 
+  identity()
+
+harmonized_object@meta.data$Phase <- ordered(harmonized_object@meta.data$Phase, levels = c("Early_Secretory", "Mid_Secretory", "Late_Secretory")) # Changing phase levels for plotting purposes
+```
+
+```{r, fig.width=12, fig.height=5}
+# Let's see what the data looks like after running harmony
+p1 <- DimPlot(object = harmonized_object, reduction = "harmony", pt.size = 0.1, group.by = "orig.ident") + ggtitle("Samples - After Harmony")
+p2 <- VlnPlot(object = harmonized_object, features = "harmony_1", group.by = "orig.ident",  pt.size = 0.1) 
+p1+p2
+
+p1 <- DimPlot(object = harmonized_object, reduction = "harmony", pt.size = 0.1, group.by = "Sequencing") + ggtitle("Sequencing - After Harmony")
+p2 <- VlnPlot(object = harmonized_object, features = "harmony_1", group.by = "orig.ident",  pt.size = 0.1)
+p1+p2
+
+p1 <- DimPlot(harmonized_object, reduction = "umap", group.by = "orig.ident") + ggtitle("Samples - After Harmony")
+p2 <- DimPlot(harmonized_object, reduction = "umap", group.by = "Sequencing") + ggtitle("Sequencing - After Harmony")
+p1+p2
+```
+
+```{r, fig.width=7, fig.height=5}
+# UMAP
+DimPlot(harmonized_object, reduction = "umap", pt.size = 0.1) + ggtitle("Aggregated Samples")+ 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+
+DimPlot(harmonized_object, reduction = "umap", pt.size = 0.01,  label = TRUE, repel = FALSE) + ggtitle("")+ 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+```
+
+```{r, fig.width=20, fig.height=6}
+DimPlot(harmonized_object, reduction = "umap", label = FALSE, pt.size = 0.01, split.by = "orig.ident")  + 
+  ggtitle("Samples Split by Sample)") + 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+```
+
+```{r, fig.width=15, fig.height=6}
+DimPlot(harmonized_object, reduction = "umap", label = FALSE, pt.size = 0.1, split.by = "Phase")  + 
+  ggtitle("Samples Split by Phase)") + 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+
+```
+
+```{r, fig.width=9, fig.height=6}
+DimPlot(harmonized_object, reduction = "umap", label = FALSE, pt.size = 0.1, split.by = "Sequencing")  + 
+  ggtitle("Samples Split by Sequencing)") + 
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+```
+
+### ITGA1 and FCGR3A Feature Plots
+```{r, fig.height=5, fig.width=12}
+FeaturePlot(harmonized_object, features = c("ITGA1", "FCGR3A"))
+FeaturePlot(harmonized_object, features = c("ZNF683", "CD69")) 
+FeaturePlot(harmonized_object, features = c("IL32", "IKZF3")) 
+FeaturePlot(harmonized_object, features = c("ITGAE", "ITGAX")) 
+```
+
+
+```{r, fig.width=12, fig.height=7}
+FeaturePlot(harmonized_object, features = c("ITGA1", "FCGR3A"), split.by = "Phase")
+FeaturePlot(harmonized_object, features = c("ZNF683", "CD69"), split.by = "Phase")
+FeaturePlot(harmonized_object, features = c("IL32", "IKZF3"), split.by = "Phase")
+FeaturePlot(harmonized_object, features = c("ITGAE", "ITGAX"), split.by = "Phase")
+```
+
+We can save the integrated, filtered and clean object at this point for use in further downstream analyses
+
+```{r}
+saveRDS(harmonized_object, file="harmonized_object.rds")
+```
+
+```{r}
+harmonized_object <- readRDS(file="harmonized_object.rds")
+
+FeaturePlot(harmonized_object, features = c("NCAM1"))
+
+```
+
+
+## Run the plot through the Monaco automated annotation tool
+```{r, eval=FALSE}
+monaco.ref <- celldex::MonacoImmuneData()
+cell_types <- as.data.frame(monaco.ref@colData@listData$label.fine) 
+
+hpca.ref <- celldex::HumanPrimaryCellAtlasData()
+cell_types <- as.data.frame(hpca.ref@colData@listData$label.fine) 
+
+dice.ref <- celldex::DatabaseImmuneCellExpressionData()
+cell_types <- as.data.frame(dice.ref@colData@listData$label.fine) 
+
+# We shall also use NovershternHematopoieticData as it has more fine-grained cell types
+nover.ref <- celldex::NovershternHematopoieticData()
+cell_types <- as.data.frame(nover.ref@colData@listData$label.fine) 
+
+# Early
+sce <- as.SingleCellExperiment(DietSeurat(harmonized_object))
+sce
+
+monaco.main <- SingleR(test = sce,assay.type.test = 1,ref = monaco.ref,labels = monaco.ref$label.main)
+monaco.fine <- SingleR(test = sce,assay.type.test = 1,ref = monaco.ref,labels = monaco.ref$label.fine)
+
+hpca.main <- SingleR(test = sce,assay.type.test = 1,ref = hpca.ref,labels = hpca.ref$label.main)
+hpca.fine <- SingleR(test = sce,assay.type.test = 1,ref = hpca.ref,labels = hpca.ref$label.fine)
+
+dice.main <- SingleR(test = sce,assay.type.test = 1,ref = dice.ref,labels = dice.ref$label.main)
+dice.fine <- SingleR(test = sce,assay.type.test = 1,ref = dice.ref,labels = dice.ref$label.fine)
+
+nover.main <- SingleR(test = sce,assay.type.test = 1,ref = nover.ref,labels = nover.ref$label.main)
+nover.fine <- SingleR(test = sce,assay.type.test = 1,ref = nover.ref,labels = nover.ref$label.fine)
+
+
+# Let’s see the summary of general cell type annotations. These match our expectations (and each other) reasonably well.
+table(monaco.main$pruned.labels)
+
+# The finer cell types annotations are what we are after, the harder they are to get reliably. This is where comparing many databases, as well as using individual markers from literature, would all be very valuable.
+table(monaco.fine$pruned.labels)
+
+table(hpca.main$pruned.labels)
+table(hpca.fine$pruned.labels)
+
+
+table(dice.main$pruned.labels)
+table(dice.fine$pruned.labels)
+
+table(nover.main$pruned.labels)
+table(nover.fine$pruned.labels)
+
+
+# Let’s add the annotations to the Seurat object metadata so we can use them:
+harmonized_object@meta.data$monaco.main <- monaco.main$pruned.labels
+harmonized_object@meta.data$monaco.fine <- monaco.fine$pruned.labels
+
+harmonized_object@meta.data$hpca.main <- hpca.main$pruned.labels
+harmonized_object@meta.data$hpca.fine <- hpca.fine$pruned.labels
+
+harmonized_object@meta.data$dice.main <- dice.main$pruned.labels
+harmonized_object@meta.data$dice.fine <- dice.fine$pruned.labels
+
+harmonized_object@meta.data$nover.main <- nover.main$pruned.labels
+harmonized_object@meta.data$nover.fine <- nover.fine$pruned.labels
+
+# Finally, let’s visualize the fine-grained annotations.
+harmonized_object <- SetIdent(harmonized_object, value = "monaco.main")
+DimPlot(harmonized_object, reduction = 'umap', label = T , repel = T, label.size = 4)  + ggtitle("Cell Type Annotation using MonacoImmuneData - Main Cell Types") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5)) #+ NoLegend()
+
+harmonized_object <- SetIdent(harmonized_object, value = "monaco.fine")
+DimPlot(harmonized_object, reduction = 'umap', label = T , repel = T, label.size = 4)  + ggtitle("Cell Type Annotation using MonacoImmuneData - Fine-Grained Cell Types") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5)) #+ NoLegend()
+
+harmonized_object <- SetIdent(harmonized_object, value = "hpca.fine")
+DimPlot(harmonized_object, reduction = 'umap', label = T , repel = T, label.size = 4)  + ggtitle("Cell Type Annotation using HumanPrimaryCellAtlasData - Fine-Grained Cell Types") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5)) +  NoLegend()
+
+harmonized_object <- SetIdent(harmonized_object, value = "dice.fine")
+DimPlot(harmonized_object, reduction = 'umap', label = T , repel = T, label.size = 4)  + ggtitle("Cell Type Annotation using DatabaseImmuneCellExpressionData - Fine-Grained Cell Types") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5)) +  NoLegend()
+
+harmonized_object <- SetIdent(harmonized_object, value = "nover.fine")
+DimPlot(harmonized_object, reduction = 'umap', label = T , repel = T, label.size = 4)  + ggtitle("Cell Type Annotation using NovershternHematopoieticData - Fine-Grained Cell Types") +
+  theme(plot.title = element_text(size = 12, hjust = 0.5))
+```
+
+
+### Find Markers
+```{r}
+cellsPerClust <- as.data.frame(table(harmonized_object@active.ident))
+colnames(cellsPerClust) <- c("Cluster", "nCells")
+as.data.frame(t(cellsPerClust))
+write.csv(cellsPerClust, file="Markers/cellsPerClust.csv")
+sum(cellsPerClust$nCells) #41722
+
+# Cell counts by cluster by sample
+cellsPerClustPerSample <- as.data.frame(table(harmonized_object@meta.data$orig.ident, harmonized_object@meta.data$seurat_clusters))
+colnames(cellsPerClustPerSample) <- c("Sample", "Cluster", "nCells")
+cellsPerClustPerSample
+cellsPerClustPerSample <- spread(cellsPerClustPerSample, key = Sample, value = nCells)
+write.csv(cellsPerClustPerSample, file="Markers/cellsPerClustPerSample.csv")
+
+(clusters <- c(0, seq(1:24)))
+
+# No need to rerun this as it takes a while at min.pct = 0, logfc.threshold = 0 (to recover even weak signals)
+for(i in clusters){
+  cluster.markers <- FindMarkers(harmonized_object, ident.1 = i, min.pct = 0.25, logfc.threshold = 0.25, only.pos = F) %>% arrange(desc(avg_log2FC))
+  write.csv(cluster.markers, file=paste0("Markers/All_Cluster", i, "_Markers.csv"))
+}
+```
+
+```{r}
+sessionInfo()
+```
+
