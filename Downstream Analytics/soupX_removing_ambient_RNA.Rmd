@@ -162,7 +162,6 @@ rm(list = ls()) #Clearing environment as we'll not be using the created objects 
 gc()
 ```
 
-
 ```{r}
 sessionInfo()
 ```
