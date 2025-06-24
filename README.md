@@ -4,9 +4,7 @@ This repository contains analytics files and code used in the generation of the 
 &nbsp;
 
 
-**Please cite:**
-
-...
+**Please cite:** ...
 &nbsp;
 &nbsp;
 ---
