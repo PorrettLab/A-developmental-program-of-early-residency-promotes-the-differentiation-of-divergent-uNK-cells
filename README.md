@@ -1,18 +1,13 @@
-## Inhibition of NFAT promotes loss of tissue resident uterine natural killer cells and attendant pregnancy complications in humans
+## A developmental program of early residency promotes the differentiation of divergent uterine NK cell subsets in humans
 
-This repository contains analytics files and code used in the generation of the manuscript: *Inhibition of NFAT promotes loss of tissue resident uterine natural killer cells and attendant pregnancy complications in humans*
+This repository contains analytics files and code used in the generation of the manuscript: *A developmental program of early residency promotes the differentiation of divergent uterine NK cell subsets in humans*
 &nbsp;
 
 -------------------------
 **Please cite:**
 
-Rebecca Asiimwe, Brittney Knott, Morgan E. Greene, Emma Wright, Markayla Bell, Daniel Epstein, Stefani D. Yates, Michael V. Gonzalez, Samantha Fry, Emily Boydston, Stephanie Clevenger, Jayme E. Locke, Brian E. Brocato, Constantine M. Burgan, Richard Burney, Nitin Arora, Virginia E. Duncan, Holly E. Richter, Deidre Gunn, Aharon G. Freud, Shawn C. Little, Paige M. Porrett
+DOI: 
 
-DOI: https://doi.org/10.1101/2024.03.07.583906
-
-<!---
-Script in the ["HC_UTx_preprocessing.Rmd"](https://github.com/PorrettLab/Role-of-NFAT-in-uterine-NK-cell-tissue-residency/blob/main/HC_UTx_preprocessing.Rmd) file outlines preprocessing and quality control meassures applied to the 6 health control and 5 uterine transplant datasets utilized in this manuscript.
---->
 
 ##### File descriptions:
 -------------------------
