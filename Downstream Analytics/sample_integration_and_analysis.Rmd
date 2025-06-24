@@ -1,6 +1,6 @@
 ---
-title: "Uterine NK Manuscript - Integrating 6 Samples of Interest: HBx01, HBx10, HBx12, HBx18, HBx19, HBx20"
-subtitle: "Merging datasets using Harmony"
+title: "A developmental program of early residency promotes the differentiation of divergent uterine NK cell subsets in humans"
+subtitle: "Integrating 6HC Datasets: HBx01, HBx10, HBx12, HBx18, HBx19, HBx20"
 author: "RA"
 output:
   rmdformats::readthedown:
@@ -14,9 +14,7 @@ editor_options:
 
 ### Overview
 
-From our first analysis of the 6 aggregated samples, we noticed HBx19 has more than 3fold as many cells compared to other samples. Herein we conduct a second analysis based on downsampling of HBx19 from 30029 cells to 10055
-
-Our overarching aim is to integrate HBx01, HBx10, HBx12, HBx18, HBx19 and HBx20 using Harmony (Integration on Sample and Sequencing Method):
+The overarching aim in this vignette is to integrate HBx01, HBx10, HBx12, HBx18, HBx19 and HBx20 using Harmony:
 
     - HBx01 - Early_Secretory, 5'
     - HBx18 - Early_Secretory, 3'
