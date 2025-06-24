@@ -3,9 +3,9 @@
 This repository contains analytics files and code used in the generation of the manuscript: *A developmental program of early residency promotes the differentiation of divergent uterine NK cell subsets in humans*
 &nbsp;
 
--------------------------
-**Please cite:**
 
+**Please cite:**
+---
 DOI: 
 
 
