@@ -1,7 +1,6 @@
 ---
 title: "HBx10 + HBx12 + HBx20 CITE-Seq (RNA + ADT): Weighted Nearest Neighbour (WNN) Analysis"
 subtitle: "WNN workflow for the analysis of multimodal single-cell datasets"
-author: "RA"
 output:
   rmdformats::readthedown:
     self_contained: true
