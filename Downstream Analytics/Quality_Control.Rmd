@@ -1,7 +1,6 @@
 ---
 title: "Manuscript - A developmental program of early residency promotes the differentiation of divergent uterine NK cell subsets in humans"
 subtitle: "Quality Control"
-author: "RA"
 output:
   rmdformats::readthedown:
     self_contained: true
