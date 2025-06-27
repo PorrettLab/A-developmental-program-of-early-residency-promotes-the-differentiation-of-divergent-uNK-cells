@@ -1,7 +1,6 @@
 ---
 title: "A developmental program of early residency promotes the differentiation of divergent uterine NK cell subsets in humans"
 subtitle: "Integrating 6HC Datasets: HBx01, HBx10, HBx12, HBx18, HBx19, HBx20"
-author: "RA"
 output:
   rmdformats::readthedown:
     self_contained: true
