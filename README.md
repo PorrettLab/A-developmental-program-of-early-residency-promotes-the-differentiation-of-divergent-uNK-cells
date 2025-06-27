@@ -16,7 +16,7 @@ DOI: https://doi.org/10.5281/zenodo.15725787
 #### File Descriptions:
 -------------------------
 
-| **SN** | **Directory** | **File**   | **Description** |
+| **SN** | **Directory** | **File/Folder**   | **Description** |
 |----------------|------------|------------|------------|
 |1|[Upstream Analytics Pipelines](https://github.com/PorrettLab/A-developmental-program-of-early-residency-promotes-the-differentiation-of-divergent-uNK-cells/tree/main/Upstream%20Analytics%20Pipelines)|[cellranger_count_analysis_pipepline_GEX.slurm](https://github.com/PorrettLab/A-developmental-program-of-early-residency-promotes-the-differentiation-of-divergent-uNK-cells/blob/main/Upstream%20Analytics%20Pipelines/cellranger_count_analysis_pipepline_GEX.slurm)|This file provides an example on how cellranger count was conducted to analyze GEX FASTQ files, align reads to the human reference genome and construct count matrices (both row and filtered) for further downstream analysis|
 |2|[Upstream Analytics Pipelines](https://github.com/PorrettLab/A-developmental-program-of-early-residency-promotes-the-differentiation-of-divergent-uNK-cells/tree/main/Upstream%20Analytics%20Pipelines)|[cellranger_count_analysis_pipepline_CITE_Seq](https://github.com/PorrettLab/A-developmental-program-of-early-residency-promotes-the-differentiation-of-divergent-uNK-cells/tree/main/Upstream%20Analytics%20Pipelines/cellranger_count_analysis_pipepline_CITE_Seq)|This directory contains key files and an example on how cellranger count was conducted to analyze CITE-Seq FASTQ files, align and filter reads and construct count matrices for further downstream analysis|
