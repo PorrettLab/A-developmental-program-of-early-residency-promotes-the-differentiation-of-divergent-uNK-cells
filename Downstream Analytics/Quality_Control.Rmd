@@ -96,7 +96,7 @@ head(HC20@meta.data)
 HC20@assays
 ```
 
-Given 10 samples have two assays, for this run, we need to specify which assay we are working with at a time like so (we'll set the assay to RNA):
+Given some samples have two assays, for this run, we need to specify which assay we are working with like so (we'll set the assay to RNA):
 ```{r}
 DefaultAssay(HC01) <- 'RNA' 
 DefaultAssay(HC10) <- 'RNA' 
@@ -106,7 +106,7 @@ DefaultAssay(HC19) <- 'RNA'
 DefaultAssay(HC20) <- 'RNA' 
 ```
 
-## Conducting QC on Each Sample - Standard Pre-processing Workflow
+## Conducting QC on Each Sample 
 
 The steps below encompass the standard pre-processing workflow for scRNA-seq data in Seurat. These represent the selection and filtration of cells based on QC metrics, data normalization and scaling, and the detection of highly variable features.
 
