@@ -13,12 +13,12 @@
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=mail@uabmc.edu
 
-module load CellRanger/6.1.1
+module load CellRanger/$ver
 
 cd /HC/HC01/GEX/cell_ranger_pipepline_analysis
 
 cellranger count --id=HC01 \
-		 --transcriptome=/porrettlab/shared_coding_resources/references/refdata-cellranger-GRCh38-3.0.0 \
+		 --transcriptome=/porrettlab/shared_coding_resources/references/$refVer \
 		 --fastqs=/path/to/fastq/files \
 		 --sample=HC01
 
