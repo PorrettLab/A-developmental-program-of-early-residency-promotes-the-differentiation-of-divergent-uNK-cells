@@ -79,14 +79,21 @@ Previously, we have worked with various workflows of running soupX e.g by defini
 
 ## HC01
 ```{r}
-sc1 = load10X("/cell_ranger_pipepline_analysis/HC01/outs/")
+sc = load10X("/cell_ranger_pipepline_analysis/HC01/outs/")
 
-str(sc1) 
-sc1 = autoEstCont(sc1)
-out1 = adjustCounts(sc1)
-dim(out1)
+str(sc) 
 
-DropletUtils:::write10xCounts("soupX_filtered/HC01_soupX_filtered", out1)
+# Estimate rho (the contamination fraction is parametrised as rho. rho=0 implies no contamination and rho=1 implies 100% of UMIs in a droplet are soup!)
+# The idea is that genes that are highly expressed in the soup and are marker genes for some population can be used to estimate the background contamination. Marker genes are identified from cluster information. The contamination fraction is then calculated at the cluster level for each of these genes and clusters are then aggressively pruned to remove those that give implausible estimates.
+
+sc = autoEstCont(sc)
+
+# After the level of background contamination has been estimated or specified for a channel, calculate the resulting corrected count matrix with background contamination removed.
+corrected.count.matrix = adjustCounts(sc)
+dim(corrected.count.matrix)
+
+# Save corrected count matrix for use in downstream analyses
+DropletUtils:::write10xCounts("soupX_filtered/HC01_soupX_filtered", corrected.count.matrix)
 
 rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
 gc()
@@ -94,14 +101,14 @@ gc()
 
 ## HC10	
 ```{r}
-sc1 = load10X("/cellranger_pipeline_analysis/HC10/outs/")
+sc = load10X("/cellranger_pipeline_analysis/HC10/outs/")
 
-str(sc1) 
-sc1 = autoEstCont(sc1)
-out1 = adjustCounts(sc1)
-dim(out1)
+str(sc) 
+sc = autoEstCont(sc)
+corrected.count.matrix = adjustCounts(sc)
+dim(corrected.count.matrix)
 
-DropletUtils:::write10xCounts("soupX_filtered/HC10_soupX_filtered", out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC10_soupX_filtered", corrected.count.matrix)
 
 rm(list = ls()) 
 gc()
@@ -109,14 +116,14 @@ gc()
 
 ## HC12
 ```{r}
-sc1 = load10X("/cellranger_pipeline_analysis/HC12/outs/")
+sc = load10X("/cellranger_pipeline_analysis/HC12/outs/")
 
-str(sc1) 
-sc1 = autoEstCont(sc1)
-out1 = adjustCounts(sc1)
-dim(out1)
+str(sc) 
+sc = autoEstCont(sc)
+corrected.count.matrix = adjustCounts(sc)
+dim(corrected.count.matrix)
 
-DropletUtils:::write10xCounts("soupX_filtered/HC12_soupX_filtered", out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC12_soupX_filtered", corrected.count.matrix)
 
 rm(list = ls()) 
 gc()
@@ -124,14 +131,14 @@ gc()
 
 ## HC18
 ```{r}
-sc1 = load10X("/cell_ranger_pipepline_analysis/HC18/outs/")
+sc = load10X("/cell_ranger_pipepline_analysis/HC18/outs/")
 
-str(sc1) 
-sc1 = autoEstCont(sc1)
-out1 = adjustCounts(sc1)
-dim(out1)
+str(sc) 
+sc = autoEstCont(sc)
+corrected.count.matrix = adjustCounts(sc)
+dim(corrected.count.matrix)
 
-DropletUtils:::write10xCounts("soupX_filtered/HC18_soupX_filtered", out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC18_soupX_filtered", corrected.count.matrix)
 
 rm(list = ls()) 
 gc()
@@ -139,14 +146,14 @@ gc()
 
 ## HC19
 ```{r}
-sc1 = load10X("/cell_ranger_pipepline_analysis/HC19/outs/")
+sc = load10X("/cell_ranger_pipepline_analysis/HC19/outs/")
 
-str(sc1) 
-sc1 = autoEstCont(sc1)
-out1 = adjustCounts(sc1)
-dim(out1)
+str(sc) 
+sc = autoEstCont(sc)
+corrected.count.matrix = adjustCounts(sc)
+dim(corrected.count.matrix)
 
-DropletUtils:::write10xCounts("soupX_filtered/HC19_soupX_filtered", out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC19_soupX_filtered", corrected.count.matrix)
 
 rm(list = ls()) 
 gc()
@@ -154,14 +161,14 @@ gc()
 
 ## HC20
 ```{r}
-sc1 = load10X("/cell_ranger_pipepline_analysis/HC20/outs/")
+sc = load10X("/cell_ranger_pipepline_analysis/HC20/outs/")
 
-str(sc1) 
-sc1 = autoEstCont(sc1)
-out1 = adjustCounts(sc1)
-dim(out1)
+str(sc) 
+sc = autoEstCont(sc)
+corrected.count.matrix = adjustCounts(sc)
+dim(corrected.count.matrix)
 
-DropletUtils:::write10xCounts("soupX_filtered/HC20_soupX_filtered", out1)
+DropletUtils:::write10xCounts("soupX_filtered/HC20_soupX_filtered", corrected.count.matrix)
 
 rm(list = ls()) 
 gc()
