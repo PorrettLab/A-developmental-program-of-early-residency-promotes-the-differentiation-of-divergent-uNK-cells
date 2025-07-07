@@ -75,7 +75,8 @@ https://cran.r-project.org/web/packages/SoupX/readme/README.html and here:
 
 https://rawcdn.githack.com/constantAmateur/SoupX/204b602418df12e9fdb4b68775a8b486c6504fe4/inst/doc/pbmcTutorial.html
 
-Prviously, we have worked with various methods such as running soupX by defining our own clusters, manually loading and decontaminating the data (leveraging clusters from cellranger analysis) and the automatic method of estimating the contamination fraction and decontaminate data. Leverages clustering information from cellranger. We shall use the latter method for our runs.
+Previously, we have worked with various workflows of running soupX e.g by defining our own clusters and manually loading and decontaminating the data, or by leveraging 
+clustering information produced by our cellranger analytics pipeline. This information is automatically loaded and used to estimate the contamination fraction and decontaminate the data. We used the latter method for our analyses.
 
 ## HC01
 ```{r}
@@ -85,6 +86,7 @@ str(sc1)
 sc1 = autoEstCont(sc1)
 out1 = adjustCounts(sc1)
 dim(out1)
+
 DropletUtils:::write10xCounts("soupX_filtered/HC01_soupX_filtered", out1)
 
 rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
@@ -99,9 +101,10 @@ str(sc1)
 sc1 = autoEstCont(sc1)
 out1 = adjustCounts(sc1)
 dim(out1)
+
 DropletUtils:::write10xCounts("soupX_filtered/HC10_soupX_filtered", out1)
 
-rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+rm(list = ls()) 
 gc()
 ```
 
@@ -113,9 +116,10 @@ str(sc1)
 sc1 = autoEstCont(sc1)
 out1 = adjustCounts(sc1)
 dim(out1)
+
 DropletUtils:::write10xCounts("soupX_filtered/HC12_soupX_filtered", out1)
 
-rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+rm(list = ls()) 
 gc()
 ```
 
@@ -127,9 +131,10 @@ str(sc1)
 sc1 = autoEstCont(sc1)
 out1 = adjustCounts(sc1)
 dim(out1)
+
 DropletUtils:::write10xCounts("soupX_filtered/HC18_soupX_filtered", out1)
 
-rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+rm(list = ls()) 
 gc()
 ```
 
@@ -141,9 +146,10 @@ str(sc1)
 sc1 = autoEstCont(sc1)
 out1 = adjustCounts(sc1)
 dim(out1)
+
 DropletUtils:::write10xCounts("soupX_filtered/HC19_soupX_filtered", out1)
 
-rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+rm(list = ls()) 
 gc()
 ```
 
@@ -155,9 +161,10 @@ str(sc1)
 sc1 = autoEstCont(sc1)
 out1 = adjustCounts(sc1)
 dim(out1)
+
 DropletUtils:::write10xCounts("soupX_filtered/HC20_soupX_filtered", out1)
 
-rm(list = ls()) #Clearing environment as we'll not be using the created objects downstream
+rm(list = ls()) 
 gc()
 ```
 
