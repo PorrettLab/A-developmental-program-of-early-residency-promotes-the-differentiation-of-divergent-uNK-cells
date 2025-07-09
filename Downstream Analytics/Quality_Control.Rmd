@@ -57,7 +57,7 @@ for(i in 1:length(file_names)){
   assign(file_names[i],readRDS(file_paths[i]))
 }
 
-#Checking data integrity on import
+# Checking data integrity on import
 x <- readRDS("soupx-corrected_seurat_objects/HC20_SeuratObj.rds")
 all.equal(x, HC20)
 
@@ -68,8 +68,7 @@ rm(x)
 ```
 
 ## Checking/Validating Details of each Object
-
-Validate cell prefix, orig.ident, Phase, Sequencing, and Sample_Group
+Validate cell prefix, orig.ident, phase, sequencing, and sample_group
 ```{r}
 HC01
 head(HC01@meta.data)
@@ -96,7 +95,7 @@ head(HC20@meta.data)
 HC20@assays
 ```
 
-Given some samples have two assays, for this run, we need to specify which assay we are working with like so (we'll set the assay to RNA):
+Given some samples have two assays (RNA and ADT), for this run, we need to specify which assay we are working with like so (we'll set the assay to RNA):
 ```{r}
 DefaultAssay(HC01) <- 'RNA' 
 DefaultAssay(HC10) <- 'RNA' 
@@ -107,11 +106,9 @@ DefaultAssay(HC20) <- 'RNA'
 ```
 
 ## Conducting QC on Each Sample 
-
 The steps below encompass the standard pre-processing workflow for scRNA-seq data in Seurat. These represent the selection and filtration of cells based on QC metrics, data normalization and scaling, and the detection of highly variable features.
 
 ## Quality Control (QC)
-
 Seurat allows us to easily explore QC metrics and filter cells based on any user-defined criteria. A few QC metrics [commonly used](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4758103/) by the community include:
 
 * The number of unique genes detected in each cell. 
@@ -126,25 +123,25 @@ Seurat allows us to easily explore QC metrics and filter cells based on any user
 
 ## HC01 QC
 ```{r,fig.height=7, fig.width=13}
-#We'll store the percentage of reads that map to the mitochondrial genome in the metadata object as "percent.mt"
+# We'll store the percentage of reads that map to the mitochondrial genome in the metadata object as "percent.mt"
 HC01[["percent.mt"]] <- PercentageFeatureSet(HC01, pattern = "^MT-")
 
-#The number of unique genes and total molecules are automatically calculated during `CreateSeuratObject()` and we can find these stored in the object meta data as nFeature_RNA and nCount_RNA respecitvely.
+# The number of unique genes and total molecules are automatically calculated during `CreateSeuratObject()` and we can find these stored in the object meta data as nFeature_RNA and nCount_RNA respecitvely.
 HC01@meta.data %>%
   head(n=5)
 ```
 
 **Visualize QC metrics, and use these to filter cells**
 ```{r, message=FALSE, fig.height=4}
-#Visualize QC metrics as violin plots
+# Visualize QC metrics as violin plots
 p1 <- VlnPlot(HC01, features = c("nFeature_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
 p2 <- VlnPlot(HC01, features = c("nCount_RNA"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
 p3 <- VlnPlot(HC01, features = c("percent.mt"), ncol = 1, cols = "skyblue") + theme_light(base_size = 14) + theme(legend.position = "none", plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
-grid.arrange(p1, p2, p3, ncol=3)
+grid.arrange(p1, p2, p3, ncol = 3)
 ```
 
 ```{r, message=FALSE, fig.width=20, fig.height=7}
-#FeatureScatter is typically used to visualize feature-feature relationships, but can be used for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+# FeatureScatter is typically used to visualize feature-feature relationships, but can be used for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
 plot1 <- FeatureScatter(HC01, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "gray60")
 plot2 <- FeatureScatter(HC01, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", cols = "gray60")
 plot1 + plot2
@@ -166,8 +163,7 @@ gp.ls <- df[, 2:4] %>% imap( ~ {
     return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
   }
 
-  # assign colors
-  col.ls <-
+col.ls <-
     setNames(
       c('gray50', 'gray70', 'gray90', "gray" ),
       c("nCount_RNA", "nFeature_RNA", "percent.mt", "log10GenesPerUMI")
@@ -227,7 +223,7 @@ metadata %>%
 
 ### Number UMIs/transcripts per cell
 ```{r, fig.width=4, fig.height=3}
-#Visualize the number UMIs/transcripts per cell
+# Visualize the number UMIs/transcripts per cell
 ggplot(metadata, aes(x = nUMI)) +
   geom_histogram(aes(y = ..density..),
                  alpha = 0.3, color="gray50", fill="white") +
@@ -237,7 +233,7 @@ ggplot(metadata, aes(x = nUMI)) +
   geom_vline(xintercept = 500) + theme(legend.position = "none")+
   geom_density(lwd = 0.5, colour = 4,
                fill = 4, alpha = 0.1)
-#The UMI counts per cell should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply
+# The UMI counts per cell should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply
 ```
 
 ### More on Data and QC
@@ -469,8 +465,6 @@ gp.ls <- df[, 2:4] %>% imap( ~ {
   give.n <- function(x) {
     return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
   }
-
-  # assign colors
   col.ls <-
     setNames(
       c('gray50', 'gray70', 'gray90', "gray" ),
@@ -774,7 +768,6 @@ gp.ls <- df[, 2:4] %>% imap( ~ {
     return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
   }
 
-  # assign colors
   col.ls <-
     setNames(
       c('gray50', 'gray70', 'gray90', "gray" ),
@@ -1078,7 +1071,6 @@ gp.ls <- df[, 2:4] %>% imap( ~ {
     return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
   }
 
-  # assign colors
   col.ls <-
     setNames(
       c('gray50', 'gray70', 'gray90', "gray" ),
@@ -1383,7 +1375,6 @@ gp.ls <- df[, 2:4] %>% imap( ~ {
     return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
   }
 
-  # assign colors
   col.ls <-
     setNames(
       c('gray50', 'gray70', 'gray90', "gray" ),
@@ -1688,7 +1679,6 @@ gp.ls <- df[, 2:4] %>% imap( ~ {
     return(c(y = median(x) + max(x) / 10, label = round(median(x), 2)))
   }
 
-  # assign colors
   col.ls <-
     setNames(
       c('gray50', 'gray70', 'gray90', "gray" ),
@@ -1949,7 +1939,6 @@ saveRDS(HC20, file = "/QC/HC20_SeuratObject_soupX_doublet_QC_filtered.rds")
 rm(HC20)
 gc()
 ```
-
 
 ```{r}
 sessionInfo()
